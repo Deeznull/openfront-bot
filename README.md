@@ -68,7 +68,7 @@ Each test game is a full free-for-all on a random map from the online 30+ player
 The bot was not trained by reading or exploiting the Impossible AI's source code. The Impossible AI is only used as an opponent. The goal was strategy that also works against human players in online games.
 
 ## Training data
-The replays and game data used for training (4+ GB) aren't in this repository. Contact **deeznull** on Discord to get them.
+The replays and game data used for training (about 1 GB) aren't in this repository. Contact **deeznull** on Discord to get them.
 
 ## Contributing
 Run training (section 2), and open a pull request with a bot change once it wins more on the same seeds. Bug reports and ideas are welcome as issues.
