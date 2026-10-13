@@ -13,7 +13,7 @@ This repository does not include the game's source code. The game can be downloa
 - `bot/tests/`: unit tests.
 - `bot/v34/`: the bot ported to game version v0.34.24.
 - `engine-patch/autoplay.patch`: a small game patch that lets the bot play solo games.
-- `userscript/`: the userscript's source and build script.
+- `userscript/`: the userscript's source and build script, plus a copy of `openfront-bot.user.js`.
 - `review-tools/`: scripts for studying replays and game data.
 - `results/online-ffa-mix/`: online FFA map mix used to pick training lobbies.
 
