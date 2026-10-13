@@ -10,8 +10,8 @@ off only when you have no player of your own (replays, spectating).
 
 ## Install
 
-A ready-built script for the live site, `openfront-bot.user.js`, is in this
-folder and in the repository root (the same file). Install Tampermonkey (in Chrome, turn on "Allow
+A ready-built script for the live site is in the repository root:
+`openfront-bot.user.js`. Install Tampermonkey (in Chrome, turn on "Allow
 User Scripts" in the extension's details page), open the file on GitHub, click
 **Raw** and then **Install**. To build it yourself instead, see "Building for
 the live site" below; then add `dist/openfront-bot-openfrontio.user.js` with
