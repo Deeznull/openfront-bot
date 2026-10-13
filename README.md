@@ -20,7 +20,7 @@ This repository does not include the game's source code. The game can be downloa
 ## 1. Using the bot in a game (Tampermonkey)
 1. Install the [Tampermonkey](https://www.tampermonkey.net/) browser extension (Chrome, Edge, Firefox, ...). In Chrome, open the extension's details and turn on **Allow User Scripts**.
 2. Open [`openfront-bot.user.js`](openfront-bot.user.js) in this repository and click **Raw**. Tampermonkey opens and offers to install it; click **Install**.
-3. Open the OpenFront website (any openfront domain works), start or join a game (any mode) and press **Start bot** in the panel at the top right.
+3. Enter the game website, start or join a game (any mode) and press **Start bot** in the panel at the top right.
 
 The script plays by running its own copy of the game in your browser, so it contains a compiled copy of the game engine (v0.34.24). If the site moves to a new game version, the script must be rebuilt for it: see `userscript/README.md`.
 
