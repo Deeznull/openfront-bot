@@ -1,15 +1,18 @@
 /**
- * Engine adapter for the single-package layout (src/core/…) that openfront.io
+ * Engine adapter for the single-package layout (src/core/…) that the live site
  * v0.34.x runs. build.mjs aliases `ofengine` to this file when the repo has
  * src/core/GameRunner.ts, and `ofrepo` to the repo root. The bot is the
  * project's BotExecution, ported to src/core/execution/bot/ (imports only).
  *
  * Differences from the monorepo engine: the worker's init message carries no
  * map (the worker fetches it from the CDN, so the shadow does the same), and
- * there is no snapshot/restore, so a desync can't be repaired.
+ * there is no snapshot/restore, so after a desync the shadow follows the real
+ * game in mirror mode (mirror.ts). Maps added to the site after this version
+ * load by name (AnyMapLoader).
  */
 import { createGameRunner } from "ofrepo/src/core/GameRunner";
 import { FetchGameMapLoader } from "ofrepo/src/core/game/FetchGameMapLoader";
+import { GameMapType } from "ofrepo/src/core/game/Game";
 import { NationMIRVBehavior } from "ofrepo/src/core/execution/nation/NationMIRVBehavior";
 
 export type { GameRunner } from "ofrepo/src/core/GameRunner";
@@ -66,13 +69,44 @@ export function createRunner(
     const base = a.base.replace(/\/+$/, "");
     // Same lookup as the game's assetUrl(): hashed name from the manifest,
     // plain path otherwise.
-    loader = new FetchGameMapLoader((p: string) => {
+    loader = new AnyMapLoader((p: string) => {
       const key = `maps/${p}`;
       const hashed = a.manifest[key];
       return hashed ? `${base}${hashed}` : `${base}/${key}`;
     });
   }
   return createGameRunner(gameStartInfo, clientID, loader, cb);
+}
+
+/**
+ * FetchGameMapLoader for maps this engine version doesn't know yet (added to
+ * the site later): the folder name is the map's name without spaces or
+ * punctuation, lowercased ("Giant World Map" -> "giantworldmap"), the same
+ * name the game derives from its enum key.
+ */
+const KNOWN_MAPS = new Set<string>(Object.values(GameMapType) as string[]);
+class AnyMapLoader extends FetchGameMapLoader {
+  private extra = new Map<string, any>();
+  getMapData(map: any): any {
+    if (KNOWN_MAPS.has(map)) return super.getMapData(map);
+    const name = String(map).replace(/[^A-Za-z0-9]/g, "").toLowerCase();
+    if (!name) throw new Error(`Unknown map: ${map}`);
+    let data = this.extra.get(name);
+    if (!data) {
+      const self = this as any; // the loader's URL and fetch helpers are private
+      const url = (f: string) => self.url(name, f);
+      data = {
+        mapBin: () => self.loadBinaryFromUrl(url("map.bin")),
+        map4xBin: () => self.loadBinaryFromUrl(url("map4x.bin")),
+        map16xBin: () => self.loadBinaryFromUrl(url("map16x.bin")),
+        manifest: () => self.loadJsonFromUrl(url("manifest.json")),
+        webpPath: url("thumbnail.webp"),
+        layerPng: (layerId: string) => self.loadImageBitmap(url(`${layerId}.png`)),
+      };
+      this.extra.set(name, data);
+    }
+    return data;
+  }
 }
 
 /**

@@ -35,22 +35,32 @@ its subdomains; the other one matches only the
 rebuild. If two builds are installed and both match a page, the first one to
 load runs and the other stays off.
 
-## The engine version must match the site
+## Site updates (version tolerance)
 
 The bot runs a **shadow copy** of the game: the site's own worker and the
-shadow receive the same turns. The shadow must therefore run *exactly* the
-same engine code as the site. Build from the matching commit:
+shadow receive the same turns, and every 10 ticks the script compares state
+hashes. Built from the site's engine version, the two stay identical. The
+header's `@description` records the engine and commit.
 
-```bash
-node build.mjs --repo "C:/path/to/OpenFrontIO-at-site-commit"
-```
+- **Engines with snapshots** (the fork): on a mismatch the shadow reloads from
+  a snapshot of the real game. If that keeps failing (more than 4 times in
+  3 minutes), the bot stops and says the engine versions differ.
+- **Engines without snapshots** (the live site, v0.34): the bot switches to
+  **mirror mode** instead of stopping. The page forwards the real worker's
+  per-tick updates; after each tick the shadow takes over the real tile owners,
+  troops and gold, then runs the bot. The panel shows "mirror mode, N% in sync"
+  (the share of changed tiles the shadow predicted right, last minute). If the
+  updates can't be read, or our own territory or the agreement stays badly
+  off, the bot stops with "game version changed too much — rebuild needed".
+- Small changes are tolerated: hash updates are found by shape when the enum
+  moves, unknown intent types are skipped (logged once), and maps the bundled
+  engine doesn't know are loaded by name.
+- The live-site build has `@updateURL`, so installed copies update
+  themselves when a rebuilt script is pushed to this repository.
 
-The header's `@description` records the engine and commit it was built from.
-Every 10 ticks the script compares state hashes. On a mismatch, it reloads the
-shadow from a snapshot of the real game. If that keeps failing (more than 4
-times in 3 minutes), it stops and tells you that the engine versions differ.
-Engines without snapshots (v0.34) can't be reloaded, so the bot stops at the
-first mismatch.
+Mirror mode does not correct units (boats, warships, buildings) or troops in
+running attacks, so the bot plays somewhat worse in it. Rebuild against the
+new site version when you can.
 
 ## Building for the live site
 
@@ -150,7 +160,9 @@ passes when all hashes match (including after a mid-game snapshot resync on
 engines that have one), neither game reports errors, and the bot still owns
 land. A lost game against Impossible nations fails the last check without
 meaning a script bug, so try another `--seed`. `--noresync` skips the resync;
-`--nobot` runs the shadow without the bot.
+`--nobot` runs the shadow without the bot. `--drift` changes troops and gold
+in the real game only (like a newer site version) to test mirror mode;
+`--drift --nocorrect` shows the same game without corrections.
 
 To test in a real browser, run the dev client (`npm run dev` in the repository,
 then http://localhost:9000), install the script, and start a Singleplayer game.
@@ -161,6 +173,8 @@ then http://localhost:9000), install the script, and start a Singleplayer game.
 |---|---|
 | `src/page.ts` | Worker hook, game gate, desync/resync, intent sending, panel UI |
 | `src/shadow.ts` | Shadow engine and bot step; turns captured executions into intents |
+| `src/mirror.ts` | Mirror mode: follows the real game when hashes differ (no-snapshot engines) |
+| `src/feed.ts` | Reads hashes and the per-tick update the mirror needs, tolerant of format changes |
 | `src/shadow-entry.ts` | Worker or page entry point for the shadow bundle |
 | `src/engine-main.ts`, `src/engine-v34.ts` | One engine API for both repository layouts (picked by `build.mjs`) |
 | `build.mjs` | esbuild bundle that writes the userscript (`--test` builds the test) |

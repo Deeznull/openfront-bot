@@ -4,12 +4,16 @@
  * - Wraps `window.Worker` (document-start) so it sees the game's engine
  *   worker: the `init` and `turn` messages the page sends it are copied to a
  *   shadow engine (shadow.ts), and the state hashes it sends back are
- *   compared with the shadow's to prove the two games are identical.
+ *   compared with the shadow's to prove the two games are identical. The
+ *   worker's per-tick updates are forwarded too: on engines without snapshots
+ *   a hash mismatch switches the shadow to mirror mode (mirror.ts), where it
+ *   follows the real game instead of the bot stopping.
  * - Intents the shadow's bot produces are sent through the game's own UI
  *   event bus (the Transport's handlers), i.e. exactly like clicks.
  * - Plays in any game mode where we have our own player (not replays/spectating).
  */
 import { GameUpdateType } from "ofenums";
+import { type FeedEntry, feedEntry, feedTransfers, findHashes } from "./feed";
 
 declare function __ofbotShadowMain(): void;
 declare const __OFBOT_VERSION__: string;
@@ -73,6 +77,11 @@ interface GameCtx {
   snapId: string | null;
   canSnapshot: boolean;
   desyncTimes: number[];
+  real: FeedEntry[]; // real updates kept only for a restart before ready
+  mirror: boolean;
+  lost: boolean;
+  sync: any;
+  lastHashOk: number;
   queue: { i: Intent; at: number; key: string }[];
   sent: number;
   dropped: number;
@@ -112,7 +121,7 @@ function hook(w: Worker) {
   (w as any).postMessage = (msg: any, transfer?: any) => {
     try {
       if (msg && typeof msg === "object") {
-        if (msg.type === "init" && msg.gameStartInfo && (msg.map || "cdnBase" in msg)) {
+        if (msg.type === "init" && msg.gameStartInfo) {
           // Clone before the real post detaches the transferred map buffers.
           onInit(w, realPost, structuredClone({ ...msg, id: undefined }));
         } else if (ctx?.realWorker === w) {
@@ -173,6 +182,11 @@ function onInit(w: Worker, realPost: GameCtx["realPost"], init: any) {
     snapId: null,
     canSnapshot: false,
     desyncTimes: [],
+    real: [],
+    mirror: false,
+    lost: false,
+    sync: null,
+    lastHashOk: Date.now(),
     queue: [],
     sent: 0,
     dropped: 0,
@@ -238,10 +252,11 @@ function startShadow(c: GameCtx, onPage: boolean) {
     snapshot: c.init.snapshot,
   });
   for (const turn of c.turns) c.shadow.post({ t: "turn", turn });
+  if (c.real.length) c.shadow.post({ t: "real", list: c.real });
 }
 
 /**
- * Older engines put the map files in the init message. Newer ones (openfront.io
+ * Older engines put the map files in the init message. Newer ones (the live site,
  * v0.34) send only `cdnBase` and the worker fetches the map itself; the shadow
  * does the same, with the page's asset manifest for the hashed file names.
  */
@@ -267,13 +282,27 @@ function onTurn(turn: any) {
 function onRealMessage(data: any) {
   const c = ctx;
   if (!c || !c.allowed || !data) return;
-  if (data.type === "game_update_batch") {
-    for (const gu of data.gameUpdates ?? []) {
-      const hs = gu?.updates?.[HASH];
-      if (!hs) continue;
-      for (const h of hs) {
+  // game_update_batch in v0.34; any message carrying engine updates in shape.
+  const gus: any[] | null = Array.isArray(data.gameUpdates)
+    ? data.gameUpdates
+    : data.gameUpdate?.updates
+      ? [data.gameUpdate]
+      : null;
+  if (gus) {
+    const list: FeedEntry[] = [];
+    for (const gu of gus) {
+      for (const h of findHashes(gu, HASH)) {
         c.realHashes.set(h.tick, h.hash);
         compare(c, h.tick);
+      }
+      const e = feedEntry(gu);
+      if (e) list.push(e);
+    }
+    if (list.length && c.shadow) {
+      if (c.shadowReady) c.shadow.post({ t: "real", list }, feedTransfers(list));
+      else {
+        c.real.push(...list);
+        c.shadow.post({ t: "real", list });
       }
     }
   } else if (data.type === "snapshot_result" && data.id && data.id === c.snapId) {
@@ -291,11 +320,12 @@ function onRealMessage(data: any) {
 function compare(c: GameCtx, tick: number) {
   const a = c.realHashes.get(tick);
   const b = c.shadowHashes.get(tick);
-  if (a === undefined || b === undefined || c.resyncing) return;
+  if (a === undefined || b === undefined || c.resyncing || c.mirror) return;
   c.realHashes.delete(tick);
   c.shadowHashes.delete(tick);
   if (a === b) {
     c.syncedTick = Math.max(c.syncedTick, tick);
+    c.lastHashOk = Date.now();
     for (const m of [c.realHashes, c.shadowHashes]) {
       for (const t of m.keys()) if (t < tick - 600) m.delete(t);
     }
@@ -310,12 +340,11 @@ function desync(c: GameCtx, tick: number) {
   c.desyncTimes.push(now);
   c.queue.length = 0;
   if (!c.canSnapshot) {
-    note(
-      `shadow diverged from the game at tick ${tick} and this game version can't resync — bot stopped. ` +
-        "Rebuild the userscript from the site's game code if this keeps happening.",
-    );
-    setBot(false);
-    c.resyncing = true; // stop comparing
+    // No snapshot to resync from: keep playing, with the shadow following the
+    // real game's own updates. Hashes can't confirm sync any more.
+    c.mirror = true;
+    c.shadow?.post({ t: "mirror", on: true });
+    note(`shadow diverged from the game at tick ${tick} (newer game version?) — mirror mode: following the game's updates`);
     return;
   }
   if (c.desyncTimes.length > 4) {
@@ -341,6 +370,7 @@ function onShadowMessage(c: GameCtx, m: any) {
       c.canSnapshot = !!m.canSnapshot;
       // The shadow holds its own map copy and turn buffer now; free ours.
       c.turns.length = 0;
+      c.real.length = 0;
       c.init.map = null;
       if (m.resync) {
         c.resyncing = false;
@@ -355,12 +385,26 @@ function onShadowMessage(c: GameCtx, m: any) {
       compare(c, m.tick);
       break;
     case "intents":
-      if (!botOn || c.resyncing) return;
+      if (!botOn || c.resyncing || c.lost) return;
       for (const i of m.intents as Intent[]) enqueue(c, i);
       break;
     case "state":
       c.stats = m;
       render();
+      break;
+    case "sync":
+      c.sync = m;
+      break;
+    case "diverged":
+      // Ownership differs while no hash has matched for a while (hashes
+      // missing or unreadable in this version): same as a hash mismatch.
+      if (!c.mirror && Date.now() - c.lastHashOk > 30_000) desync(c, m.tick);
+      break;
+    case "lost":
+      c.lost = true;
+      c.queue.length = 0;
+      note(`game version changed too much — rebuild needed (${m.msg}). Bot stopped.`);
+      setBot(false);
       break;
     case "log":
       note(m.msg);
@@ -464,7 +508,7 @@ function canSend(c: GameCtx): boolean {
 
 function pump() {
   const c = ctx;
-  if (!c || !c.allowed || !botOn || c.resyncing) return;
+  if (!c || !c.allowed || !botOn || c.resyncing || c.lost) return;
   const now = performance.now();
   // Decisions go stale: drop what couldn't be sent within 2.5 s.
   const before = c.queue.length;
@@ -646,8 +690,11 @@ function render() {
   if (!c) status = "No game running";
   else if (!c.allowed) status = c.reason;
   else if (!c.shadowReady) status = `${c.gameType}: loading shadow engine…`;
-  else if (c.resyncing && !c.canSnapshot) status = `${c.gameType}: out of sync — bot off`;
-  else if (c.resyncing) status = `${c.gameType}: resyncing…`;
+  else if (c.lost) status = `${c.gameType}: game version changed too much — rebuild needed`;
+  else if (c.mirror) {
+    const p = c.sync?.mirror && c.sync.pct !== undefined ? ` ${Math.floor(c.sync.pct * 100)}% in sync` : "";
+    status = `${c.gameType}: mirror mode,${p || " starting"}`;
+  } else if (c.resyncing) status = `${c.gameType}: resyncing…`;
   else status = `${c.gameType}: in sync${c.syncedTick >= 0 ? ` @ tick ${c.syncedTick}` : ""}`;
   ui.status.textContent = status;
   const s = c?.stats;

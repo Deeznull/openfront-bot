@@ -10,7 +10,17 @@
  *  - a snapshot resync mid-game keeps the hashes equal (engines that have
  *    snapshots only),
  *  - the bot spawns and grows our player in the real game through intents
- *    alone.
+ *    alone,
+ *  - the real game's updates, forwarded like the page does (feed.ts), pass
+ *    the shadow's format check and agree with it everywhere.
+ *
+ * --drift [n]: every n ticks (default 50) after spawn, scale the troops of
+ * three random players by 0.8-1.2 and give them some gold, in the real game
+ * only (no side is favoured on average), so the hashes differ like with
+ * a newer site version. On the first mismatch the test, like the page on an
+ * engine without snapshots, switches the shadow to mirror mode; --nocorrect
+ * measures the same with no corrections. Reported: owned-tile agreement
+ * (full map), own tiles and troops real vs shadow, and the real game's growth.
  */
 import { CAN_SNAPSHOT, createRunner, ENGINE, GameUpdateType, UnitType } from "ofengine";
 import {
@@ -24,6 +34,7 @@ import {
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Worker } from "node:worker_threads";
+import { feedEntry, findHashes } from "../src/feed";
 
 declare const __REPO__: string;
 
@@ -66,10 +77,31 @@ async function main() {
 
   const realHashes = new Map<number, number>();
   let realErrors = 0;
+  let feed: any[] = []; // the real game's updates since the last turn, as the page forwards them
   const real: any = await createRunner(gameStart, CLIENT, src, (gu: any) => {
-    for (const h of gu?.updates?.[GameUpdateType.Hash] ?? []) realHashes.set(h.tick, h.hash);
+    for (const h of findHashes(gu, GameUpdateType.Hash)) realHashes.set(h.tick, h.hash);
+    const e = feedEntry(gu);
+    if (e) feed.push(e);
     if (gu && "errMsg" in gu && realErrors++ < 3) console.error("real game error:", gu.stack ?? gu.errMsg);
   });
+  const driftAt = process.argv.indexOf("--drift");
+  const driftEvery = driftAt < 0 ? 0 : Number(process.argv[driftAt + 1]) || 50;
+  const correct = !process.argv.includes("--nocorrect");
+  let rng = 0;
+  for (const ch of seed) rng = (rng * 31 + ch.charCodeAt(0)) >>> 0;
+  const rand = () => {
+    rng = (rng + 0x6d2b79f5) >>> 0;
+    let t = rng;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  let mirrorAt = -1;
+  const syncs: any[] = [];
+  let lost = 0;
+  let diverged = 0;
+  let lastFeed = "none";
+  let preOwnedMin = 1;
 
   const shadowHashes = new Map<number, number>();
   const counts: Record<string, number> = {};
@@ -139,6 +171,15 @@ async function main() {
         if (o?.isPlayer?.() && m.intents.some((x: any) => x.type === "allianceRequest" && x.recipient === o.id())) snipeAllies++;
       }
       pending.set(due, list);
+    } else if (m.t === "sync") {
+      lastFeed = m.feed;
+      if (m.mirror) syncs.push(m);
+      else preOwnedMin = Math.min(preOwnedMin, m.owned);
+    } else if (m.t === "lost") {
+      lost++;
+      console.error(`shadow gave up mirroring: ${m.msg}`);
+    } else if (m.t === "diverged") {
+      diverged++;
     } else if (m.t === "error") {
       errors++;
       console.error("shadow error:", m.msg);
@@ -158,10 +199,20 @@ async function main() {
     for (const [t, h] of shadowHashes) {
       const r = realHashes.get(t);
       if (r === undefined) continue;
+      if (mirrorAt >= 0) {
+        shadowHashes.delete(t);
+        continue; // mirror mode: hashes no longer compared, like the page
+      }
       compared++;
       if (r !== h) {
         mismatches++;
-        if (mismatches <= 5) console.error(`HASH MISMATCH tick ${t}: real ${r} shadow ${h}`);
+        if (mismatches <= 5 && !driftEvery) console.error(`HASH MISMATCH tick ${t}: real ${r} shadow ${h}`);
+        if (driftEvery && !CAN_SNAPSHOT) {
+          // What the page does on an engine without snapshots.
+          mirrorAt = t;
+          shadow({ t: "mirror", on: true, correct });
+          console.log(`hash mismatch at tick ${t}: mirror mode${correct ? "" : " (no corrections)"}`);
+        }
       }
       shadowHashes.delete(t);
     }
@@ -173,7 +224,20 @@ async function main() {
     pending.delete(n);
     real.addTurn(turn);
     real.executeNextTick();
+    if (driftEvery && n % driftEvery === 0 && !real.game.inSpawnPhase()) {
+      // Real-only change: the shadow never sees it except through the feed.
+      const alive = real.game.players().filter((p: any) => p.isAlive());
+      for (let k = 0; k < 3 && alive.length; k++) {
+        const p = alive[Math.floor(rand() * alive.length)];
+        p.setTroops(Math.round(p.troops() * (0.8 + 0.4 * rand())));
+        p.addGold(BigInt(Math.floor(rand() * 10000)));
+      }
+    }
+    // Turn first, then the real updates: the shadow (held in mirror mode)
+    // waits for them, as in the page when its real worker is slower.
     shadow({ t: "turn", turn });
+    shadow({ t: "real", list: feed });
+    feed = [];
     await settle();
     check();
     if (n === resyncAt && CAN_SNAPSHOT && !process.argv.includes("--noresync")) {
@@ -186,9 +250,11 @@ async function main() {
     }
     if (n % 600 === 0) {
       const me = real.game.playerByClientID(CLIENT)!;
+      const sy = syncs[syncs.length - 1];
       console.log(
         `min ${n / 600}: tiles ${me.numTilesOwned()} troops ${Math.round(me.troops())} ` +
-          `alive ${me.isAlive()} | hashes ok ${compared} bad ${mismatches}`,
+          `alive ${me.isAlive()} | hashes ok ${compared} bad ${mismatches}` +
+          (sy ? ` | mirror ${(sy.pct * 100).toFixed(1)}% owned ${(sy.owned * 100).toFixed(1)}% me ${sy.meShadow}/${sy.meReal}` : ""),
       );
     }
   }
@@ -202,7 +268,28 @@ async function main() {
   console.log(
     `RESULT tiles ${me.numTilesOwned()} alive ${me.isAlive()} hashes compared ${compared} mismatches ${mismatches} errors ${errors} real errors ${realErrors} tribe diplomacy ${tribeDiplomacy} (${secs}s)`,
   );
-  const ok = mismatches === 0 && compared > 0 && me.numTilesOwned() > 0 && errors === 0 && realErrors === 0 && tribeDiplomacy === 0 &&
+  const avg = (f: (x: any) => number) => (syncs.length ? syncs.reduce((a, x) => a + f(x), 0) / syncs.length : NaN);
+  const pctOf = (x: number) => `${(x * 100).toFixed(2)}%`;
+  console.log(
+    `FEED last check ${CAN_SNAPSHOT ? "n/a (snapshot engine)" : lastFeed}, owned agreement before mirror (min) ${pctOf(preOwnedMin)}, diverged flags ${diverged}`,
+  );
+  if (driftEvery) {
+    const owned = syncs.map((x) => x.owned).filter((x) => x >= 0);
+    const last = syncs[syncs.length - 1];
+    console.log(
+      `MIRROR ${correct ? "corrected" : "uncorrected"} from tick ${mirrorAt}: reports ${syncs.length}, ` +
+        `owned-tile agreement avg ${pctOf(owned.reduce((a, x) => a + x, 0) / Math.max(1, owned.length))} ` +
+        `min ${pctOf(Math.min(...owned))} last ${pctOf(owned[owned.length - 1] ?? NaN)}, ` +
+        `changed-tile agreement avg ${pctOf(avg((x) => x.pct))}, ` +
+        `own tiles err avg ${pctOf(avg((x) => Math.abs(x.meShadow - x.meReal) / Math.max(1, x.meReal)))}, ` +
+        `own troops err avg ${pctOf(avg((x) => Math.abs(x.troopsShadow - x.troopsReal) / Math.max(1, x.troopsReal)))}, ` +
+        `fixes ${last?.fixedTiles ?? 0} tiles ${last?.fixedStats ?? 0} stats, lost ${lost}`,
+    );
+  }
+  const synced = driftEvery
+    ? mirrorAt >= 0 && (lost === 0 || !correct)
+    : mismatches === 0 && compared > 0 && diverged === 0 && (CAN_SNAPSHOT || lastFeed === "ok") && preOwnedMin === 1;
+  const ok = synced && me.numTilesOwned() > 0 && errors === 0 && realErrors === 0 && tribeDiplomacy === 0 &&
     !counts.breakAlliance && !me.isTraitor();
   console.log(ok ? "PASS" : "FAIL");
   process.exit(ok ? 0 : 1);

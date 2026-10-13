@@ -2,8 +2,9 @@
 // dist/openfront-bot-openfrontio.user.js (v34): the shadow engine (game engine + bot,
 // bundled from ../OpenFrontIO) wrapped in a function, then the page script.
 //   node build.mjs [--repo <path to OpenFrontIO checkout>]
-// The engine must be the same version the site runs, or the shadow game
-// drifts from the real one (the script detects that and stops).
+// The same engine version as the site keeps the shadow game hash-identical to
+// the real one. A later site version that drifts from it is followed in
+// mirror mode (src/mirror.ts) until it differs too much; then rebuild.
 import { createRequire } from "node:module";
 import { execSync } from "node:child_process";
 import fs from "node:fs";
@@ -90,6 +91,8 @@ const target =
         sites: [],
         // Any openfront.<tld> (openfront.io, openfront.com, openfront.co.uk, ...) and its subdomains.
         includes: [String.raw`/^https?:\/\/([a-z0-9-]+\.)*openfront\.[a-z]{2,}(\.[a-z]{2,})?(:\d+)?\//`],
+        // Installed copies update themselves when a rebuilt script is pushed.
+        update: "https://raw.githubusercontent.com/Deeznull/openfront-bot/main/openfront-bot.user.js",
       }
     : {
         file: "openfront-bot.user.js",
@@ -103,7 +106,7 @@ const header = `// ==UserScript==
 // @version      ${pkg.version}
 // @description  Plays as you with the trained OpenFront code bot when you press Start. Engine ${kind} ${commit}.
 ${[...target.sites.map((m) => `// @match        ${m}`), ...(target.includes ?? []).map((m) => `// @include      ${m}`)].join("\n")}
-// @run-at       document-start
+${target.update ? `// @updateURL    ${target.update}\n// @downloadURL  ${target.update}\n` : ""}// @run-at       document-start
 // @grant        none
 // @inject-into  page
 // @noframes

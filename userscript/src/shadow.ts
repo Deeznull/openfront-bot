@@ -6,7 +6,10 @@
  * embargo calls it makes) and turns that into ordinary player intents. The page
  * sends those intents through the game's own UI event bus, so they reach the
  * game exactly like clicks would. The shadow game itself is never mutated by
- * the bot, so it stays bit-identical to the real one (checked by hash).
+ * the bot, so it stays bit-identical to the real one (checked by hash). If it
+ * drifts anyway (a newer site version) and the engine can't restore a
+ * snapshot, mirror.ts keeps it close to the real game from the real engine's
+ * own updates.
  *
  * Runs inside a Worker (normal) or on the page (fallback); `createShadow`
  * takes the function to post messages back with.
@@ -41,6 +44,8 @@ import {
   UpgradeStructureExecution,
 } from "ofengine";
 import type { BotParams, Game, GameRunner, MapSource, Player } from "ofengine";
+import { type FeedEntry, findHashes } from "./feed";
+import { Mirror } from "./mirror";
 
 export type Post = (msg: any, transfer?: Transferable[]) => void;
 
@@ -71,6 +76,12 @@ export function createShadow(post: Post, onPage = false) {
   let baseTick = 0; // game tick of turns[0]
   let fed = 0; // turns handed to the current runner
   let draining = false;
+
+  const mySmallID = () => {
+    const me = runner && clientID ? runner.game.playerByClientID(clientID) : null;
+    return me ? me.smallID() : 0;
+  };
+  let mirror = new Mirror(post, mySmallID);
 
   let enabled = false;
   let emojis = false;
@@ -137,8 +148,8 @@ export function createShadow(post: Post, onPage = false) {
     const cb = (gu: any) => {
       if (gen !== generation) return;
       if (gu && "updates" in gu) {
-        const hs = gu.updates[GameUpdateType.Hash];
-        if (hs) for (const h of hs) post({ t: "hash", tick: h.tick, hash: h.hash });
+        for (const h of findHashes(gu, GameUpdateType.Hash)) post({ t: "hash", tick: h.tick, hash: h.hash });
+        mirror.shadowTiles(gu.packedTileUpdates);
       } else if (gu && "errMsg" in gu) {
         post({ t: "error", msg: `shadow tick error: ${gu.errMsg}` });
       }
@@ -156,6 +167,7 @@ export function createShadow(post: Post, onPage = false) {
         return;
       }
     }
+    guardIntents(r);
     runner = r;
     const me = clientID ? r.game.playerByClientID(clientID) : null;
     post({
@@ -176,8 +188,12 @@ export function createShadow(post: Post, onPage = false) {
     try {
       const r = runner;
       while (fed < turns.length && r === runner) {
+        // Mirror mode: no further ahead than the real game (its tick-N
+        // update is what corrects our tick N).
+        if (mirror.holds(r.game.ticks() + 1, turns.length - fed)) break;
         r.addTurn(turns[fed++]);
         r.executeNextTick();
+        if (!CAN_SNAPSHOT) mirror.sync(r.game);
         if (enabled && turns.length - fed <= MAX_LAG_FOR_BOT) botStep(r.game);
         if (onPage && performance.now() - t0 > SLICE_MS) {
           setTimeout(drain, 0);
@@ -187,6 +203,57 @@ export function createShadow(post: Post, onPage = false) {
     } finally {
       draining = false;
     }
+  }
+
+  /**
+   * A turn may hold intents this engine doesn't know (a newer site version)
+   * or can't build: skip those (logged once per type) instead of letting the
+   * throw take the whole tick down. Executions made from intents that throw
+   * later, in init or tick, are switched off the same way.
+   */
+  const badIntents = new Set<string>();
+  function skipIntent(type: unknown, e: any) {
+    const k = String(type);
+    if (badIntents.has(k)) return;
+    badIntents.add(k);
+    log(`skipping intent "${k}" this engine can't run: ${e?.message ?? e}`);
+  }
+  function guardIntents(r: GameRunner) {
+    const em = (r as any).execManager;
+    if (!em || typeof em.createExec !== "function") return;
+    em.createExecs = (turn: any) => {
+      const out: any[] = [];
+      for (const i of turn?.intents ?? []) {
+        try {
+          out.push(guardExec(em.createExec(i), i?.type));
+        } catch (e) {
+          skipIntent(i?.type, e);
+        }
+      }
+      return out;
+    };
+  }
+  function guardExec(ex: any, type: unknown) {
+    if (!ex || typeof ex.init !== "function") return ex;
+    let dead = false;
+    for (const m of ["init", "tick"]) {
+      const f = ex[m];
+      if (typeof f !== "function") continue;
+      ex[m] = function (this: any, ...a: unknown[]) {
+        if (dead) return;
+        try {
+          return f.apply(this, a);
+        } catch (e) {
+          dead = true;
+          skipIntent(type, e);
+        }
+      };
+    }
+    const active = ex.isActive;
+    if (typeof active === "function") ex.isActive = function (this: any) {
+      return !dead && active.call(this);
+    };
+    return ex;
   }
 
   function botStep(g: Game) {
@@ -462,10 +529,24 @@ export function createShadow(post: Post, onPage = false) {
         mapSource = m.mapSource ?? { files: m.map };
         turns.length = 0;
         spawnSent = false;
+        mirror = new Mirror(post, mySmallID);
         start(m.snapshot, true).catch((e) => post({ t: "error", msg: `shadow init failed: ${e?.message ?? e}` }));
         break;
       case "turn":
         turns.push(m.turn);
+        drain();
+        break;
+      case "real":
+        // What the page's real engine reported (feed.ts); used by mirror mode.
+        if (CAN_SNAPSHOT) break;
+        mirror.push(m.list as FeedEntry[]);
+        if (runner && !draining) mirror.sync(runner.game);
+        drain();
+        break;
+      case "mirror":
+        // Hashes differ and this engine can't resync: follow the real game.
+        if (!CAN_SNAPSHOT && m.on) mirror.start(m.correct !== false);
+        if (runner && !draining) mirror.sync(runner.game);
         drain();
         break;
       case "resync":
