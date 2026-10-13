@@ -87,8 +87,8 @@ const target =
     ? {
         file: "openfront-bot-openfrontio.user.js",
         name: "OpenFront Bot",
-        sites: ["https://openfront.io/*", "https://*.openfront.io/*"],
-        // Any openfront.<tld> (openfront.com, openfront.co.uk, ...) and its subdomains.
+        sites: [],
+        // Any openfront.<tld> (openfront.io, openfront.com, openfront.co.uk, ...) and its subdomains.
         includes: [String.raw`/^https?:\/\/([a-z0-9-]+\.)*openfront\.[a-z]{2,}(\.[a-z]{2,})?(:\d+)?\//`],
       }
     : {
@@ -102,7 +102,7 @@ const header = `// ==UserScript==
 // @namespace    ofbot.local
 // @version      ${pkg.version}
 // @description  Plays as you with the trained OpenFront code bot when you press Start. Engine ${kind} ${commit}.
-${target.sites.map((m) => `// @match        ${m}`).join("\n")}${(target.includes ?? []).map((m) => `\n// @include      ${m}`).join("")}
+${[...target.sites.map((m) => `// @match        ${m}`), ...(target.includes ?? []).map((m) => `// @include      ${m}`)].join("\n")}
 // @run-at       document-start
 // @grant        none
 // @inject-into  page

@@ -3,8 +3,6 @@
 // @namespace    ofbot.local
 // @version      0.3.5
 // @description  Plays as you with the trained OpenFront code bot when you press Start. Engine v34 v0.34.24-3f5633b9.
-// @match        https://openfront.io/*
-// @match        https://*.openfront.io/*
 // @include      /^https?:\/\/([a-z0-9-]+\.)*openfront\.[a-z]{2,}(\.[a-z]{2,})?(:\d+)?\//
 // @run-at       document-start
 // @grant        none
