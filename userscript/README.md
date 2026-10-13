@@ -10,7 +10,7 @@ off only when you have no player of your own (replays, spectating).
 
 ## Install
 
-A ready-built script for the live site is in the repo root:
+A ready-built script for the live site is in the repository root:
 `openfront-bot.user.js`. Install Tampermonkey (in Chrome, turn on "Allow
 User Scripts" in the extension's details page), open the file on GitHub, click
 **Raw** and then **Install**. To build it yourself instead, see "Building for
@@ -56,7 +56,7 @@ first mismatch.
 
 The live site runs v0.34.24, which uses the older single-package layout
 (`src/core/…`). Build from a checkout of that tag with the bot copied in
-(run from the repo root):
+(run from the repository root):
 
 ```bash
 git clone --branch v0.34.24 https://github.com/openfrontio/OpenFrontIO.git tools/OpenFrontIO-v0.34.24
@@ -152,7 +152,7 @@ land. A lost game against Impossible nations fails the last check without
 meaning a script bug, so try another `--seed`. `--noresync` skips the resync;
 `--nobot` runs the shadow without the bot.
 
-To test in a real browser, run the dev client (`npm run dev` in the repo,
+To test in a real browser, run the dev client (`npm run dev` in the repository,
 then http://localhost:9000), install the script, and start a Singleplayer game.
 
 ## Files
@@ -162,7 +162,7 @@ then http://localhost:9000), install the script, and start a Singleplayer game.
 | `src/page.ts` | Worker hook, game gate, desync/resync, intent sending, panel UI |
 | `src/shadow.ts` | Shadow engine and bot step; turns captured executions into intents |
 | `src/shadow-entry.ts` | Worker or page entry point for the shadow bundle |
-| `src/engine-main.ts`, `src/engine-v34.ts` | One engine API for both repo layouts (picked by `build.mjs`) |
+| `src/engine-main.ts`, `src/engine-v34.ts` | One engine API for both repository layouts (picked by `build.mjs`) |
 | `build.mjs` | esbuild bundle that writes the userscript (`--test` builds the test) |
 | `test/sim.ts` | Headless integration test |
 | `test/shadow-thread.ts`, `test/node-*.ts` | Test shadow worker thread; map loading per engine |

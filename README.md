@@ -4,7 +4,7 @@ A code bot/script for the OpenFront game, trained by running many headless games
 
 Developed to beat human players in online games. So far it has only been tested against the game's Impossible AI, not yet in online games. To contribute, see [below](#contributing).
 
-This repo does not include the game's source code. The game can be downloaded from the [OpenFrontIO](https://github.com/openfrontio/OpenFrontIO) repository.
+This repository does not include the game's source code. The game can be downloaded from the [OpenFrontIO](https://github.com/openfrontio/OpenFrontIO) repository.
 
 ## What's here
 - `bot/BotExecution.ts`: the bot.
@@ -19,14 +19,14 @@ This repo does not include the game's source code. The game can be downloaded fr
 
 ## 1. Using the bot in a game (Tampermonkey)
 1. Install the [Tampermonkey](https://www.tampermonkey.net/) browser extension (Chrome, Edge, Firefox, ...). In Chrome, open the extension's details and turn on **Allow User Scripts**.
-2. Open [`openfront-bot.user.js`](openfront-bot.user.js) in this repo and click **Raw**. Tampermonkey opens and offers to install it; click **Install**.
+2. Open [`openfront-bot.user.js`](openfront-bot.user.js) in this repository and click **Raw**. Tampermonkey opens and offers to install it; click **Install**.
 3. Open the OpenFront website (any openfront domain works), start or join a game (any mode) and press **Start bot** in the panel at the top right.
 
 The script plays by running its own copy of the game in your browser, so it contains a compiled copy of the game engine (v0.34.24). If the site moves to a new game version, the script must be rebuilt for it: see `userscript/README.md`.
 
 ## 2. Training
 ### Setup
-The game itself is open source, so setup downloads it from the official repo (commit `a1513835`) and adds the bot on top. Needs git, Node.js and bash (Git Bash on Windows).
+The game itself is open source, so setup downloads it from the official repository (commit `a1513835`) and adds the bot on top. Needs git, Node.js and bash (Git Bash on Windows).
 
 ```
 bash setup.sh
@@ -45,7 +45,7 @@ npx tsx tests/bot/BotGame.ts --seed s1 --roulette --bot us --autoplay
 Results go to `tools/bot_runs/`.
 
 ### Training with AI agents (e.g. Claude Code)
-The games run on CPU; an AI agent only plans, reads results and edits the bot. That keeps token use low. Open the repo in the agent and give it a prompt like:
+The games run on CPU; an AI agent only plans, reads results and edits the bot. That keeps token use low. Open the repository in the agent and give it a prompt like:
 
 > Read README.md. Goal: raise the bot's win rate. Loop: (1) run a few `--trace` games and find why the bot lost; send long logs to a cheaper sub-agent and read only its summary. (2) Add the fix as a new setting in `bot/BotExecution.ts` (off by default) with a unit test. (3) Compare it with `Eval.mjs` against the current bot on the same seeds. Keep it only if the confidence interval is above 0. (4) Write every result and next step into PROGRESS.md so the next session can continue.
 
@@ -68,7 +68,7 @@ Each test game is a full free-for-all on a random map from the online 30+ player
 The bot was not trained by reading or exploiting the Impossible AI's source code. The Impossible AI is only used as an opponent. The goal was strategy that also works against human players in online games.
 
 ## Training data
-The replays and game data used for training (4+ GB) aren't in this repo. Contact **deeznull** on Discord to get them.
+The replays and game data used for training (4+ GB) aren't in this repository. Contact **deeznull** on Discord to get them.
 
 ## Contributing
 Run training (section 2), and open a pull request with a bot change once it wins more on the same seeds. Bug reports and ideas are welcome as issues.
