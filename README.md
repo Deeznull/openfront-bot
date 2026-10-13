@@ -22,7 +22,7 @@ This repository does not include the game's source code. The game can be downloa
 2. Open [`openfront-bot.user.js`](openfront-bot.user.js) in this repository and click **Raw**. Tampermonkey opens and offers to install it; click **Install**.
 3. Enter the game website, start or join a game (any mode) and press **Start bot** in the panel at the top right.
 
-The script plays by running its own copy of the game in your browser, so it contains a compiled copy of the game engine (v0.34.24). If the site moves to a new game version, the script must be rebuilt for it: see `userscript/README.md`.
+Nothing else needs to be downloaded: the script file already has everything it needs. It is made for game version v0.34.24; if the site moves to a new version, the script must be rebuilt for it (see `userscript/README.md`).
 
 ## 2. Training
 ### Setup
