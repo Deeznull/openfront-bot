@@ -6,7 +6,7 @@ Developed to beat human players in online games. So far it has only been tested 
 
 This repository does not include the game's source code. The game can be downloaded from the [OpenFrontIO](https://github.com/openfrontio/OpenFrontIO) repository.
 
-## What's here
+## Contents
 - `openfront-bot.user.js`: the ready-to-install Tampermonkey script.
 - `bot/BotExecution.ts`: the bot.
 - `bot/harness/`: headless game runner (`BotGame.ts`), stand-in opponents, evaluation and tuning scripts (`Eval.mjs`, `Tune.mjs`, `stats.mjs`).
