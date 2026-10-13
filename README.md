@@ -59,11 +59,11 @@ Each test game is a full free-for-all on a random map from the online 30+ player
 
 | Lobby size | Games | Bot wins | Bot win rate | Impossible AI win rate | Bot vs Impossible |
 |---|---|---|---|---|---|
-| 30-49 players | 49 | 10 | 20.4% | 2.8% | 7.3x |
-| 50-79 players | 49 | 8 | 16.3% | 1.7% | 9.6x |
-| 80-125 players | 30 | 5 | 16.7% | 1.0% | 16.7x |
-| **All FFAs** | **128** | **23** | **18.0%** | **2.0%** | **9.2x** |
-| Default solo game (World, 72 nations) | 100 | 8 | 8.0% | 1.4% | 5.7x |
+| 30-49 players | 49 | 10 | ~20% | 2.8% | ~7x |
+| 50-79 players | 49 | 8 | ~16% | 1.7% | ~10x |
+| 80-125 players | 30 | 5 | ~17% | 1.0% | ~17x |
+| **All FFAs** | **128** | **23** | **~18%** | **~2.0%** | **~9x** |
+| Default solo game (World, 72 nations) | 100 | 8 | 8% | 1.4% | ~6x |
 
 The bot was not trained by reading or exploiting the Impossible AI's source code. The Impossible AI is only used as an opponent. The goal was strategy that also works against human players in online games.
 
