@@ -15,8 +15,8 @@ off only when you have no player of your own (replays, spectating).
    node build.mjs
    ```
    This writes `dist/openfront-bot.user.js` (the fork and the dev client).
-   For openfront.io, build `dist/openfront-bot-openfrontio.user.js` instead
-   (see "Building for openfront.io").
+   For the live site, build `dist/openfront-bot-openfrontio.user.js` instead
+   (see "Building for the live site").
 2. Install a userscript manager (Tampermonkey or Violentmonkey). In Chrome,
    turn on "Allow User Scripts" in the extension's details page. Don't paste
    the file: it is about 0.85 MB and often gets cut off. Serve it instead:
@@ -33,8 +33,8 @@ off only when you have no player of your own (replays, spectating).
    - The panel can be dragged and collapsed. Its settings are saved in
      `localStorage`.
 
-Each build matches only the sites that run its engine: the openfront.io build
-matches any `openfront.<tld>` domain (openfront.io, openfront.com, ...) and
+Each build matches only the sites that run its engine: the live-site build
+matches any `openfront.<tld>` domain and
 its subdomains; the other one matches only the
 `localhost:9000` (dev client). To add a host, edit `target` in `build.mjs` and
 rebuild. If two builds are installed and both match a page, the first one to
@@ -57,9 +57,9 @@ times in 3 minutes), it stops and tells you that the engine versions differ.
 Engines without snapshots (v0.34) can't be reloaded, so the bot stops at the
 first mismatch.
 
-## Building for openfront.io
+## Building for the live site
 
-openfront.io runs v0.34.24, which uses the older single-package layout
+The live site runs v0.34.24, which uses the older single-package layout
 (`src/core/…`). Build from a checkout of that tag with the bot copied in:
 
 ```bash
@@ -150,7 +150,7 @@ and the bot's intents are fed back as turns.
 node build.mjs --test
 ```
 
-(add `--repo ../OpenFrontIO-v0.34.24` to test the openfront.io engine)
+(add `--repo ../OpenFrontIO-v0.34.24` to test the live-site engine)
 
 ```bash
 node test-dist/sim.mjs --min 6 --map World --difficulty Impossible

@@ -4,7 +4,7 @@ A code bot/script for the OpenFront game, trained by running many headless games
 
 Developed to beat human players in online games. So far it has only been tested against the game's Impossible AI, not yet in online games. To contribute, see [below](#contributing).
 
-This repo holds only our own code. It does not include the game itself.
+This repo holds only our own code. It does not include the game itself; the game can be downloaded [here](https://github.com/openfrontio/OpenFrontIO).
 
 ## What's here
 - `bot/BotExecution.ts`: the bot.
@@ -17,7 +17,7 @@ This repo holds only our own code. It does not include the game itself.
 - `results/online-ffa-mix/`: online FFA map mix used to pick training lobbies.
 
 ## 1. Using the bot in a game (Tampermonkey)
-1. Get the game at the version openfront.io runs (v0.34.24) and add the bot:
+1. Get the game at the version the live site runs (v0.34.24) and add the bot:
    ```
    git clone --branch v0.34.24 https://github.com/openfrontio/OpenFrontIO.git tools/OpenFrontIO-v0.34.24
    mkdir -p tools/OpenFrontIO-v0.34.24/src/core/execution/bot
@@ -27,7 +27,7 @@ This repo holds only our own code. It does not include the game itself.
 2. Build the userscript: `node userscript/build.mjs --repo tools/OpenFrontIO-v0.34.24`
 3. Install the [Tampermonkey](https://www.tampermonkey.net/) browser extension (Chrome, Edge, Firefox, ...). In Chrome, open the extension's details and turn on **Allow User Scripts**.
 4. Add the script: open the Tampermonkey **Dashboard**, go to **Utilities**, choose **Import from file** and pick `userscript/dist/openfront-bot-openfrontio.user.js`.
-5. Open OpenFront (openfront.io, openfront.com or any other openfront domain), start or join a game (any mode) and press **Start bot** in the panel at the top right.
+5. Open the OpenFront website (any openfront domain works), start or join a game (any mode) and press **Start bot** in the panel at the top right.
 
 If the site updates its game version, rebuild from the matching version. More details are in `userscript/README.md`.
 

@@ -18,12 +18,12 @@ const esbuild = require("esbuild");
 const pkg = JSON.parse(fs.readFileSync(path.join(here, "package.json"), "utf8"));
 
 // Engine layout: the monorepo (packages/engine, this project's fork) or the
-// single-package src/core layout that openfront.io v0.34 runs. The matching
+// single-package src/core layout that the live site (v0.34) runs. The matching
 // adapter (src/engine-*.ts) gives shadow.ts one API for both.
 const kind = fs.existsSync(path.join(repo, "packages", "engine")) ? "main" : "v34";
 if (kind === "v34" && !fs.existsSync(path.join(repo, "src/core/execution/bot/BotExecution.ts"))) {
   console.error(
-    `${repo} has no src/core/execution/bot/BotExecution.ts. Port the bot first (see README: "Building for openfront.io").`,
+    `${repo} has no src/core/execution/bot/BotExecution.ts. Port the bot first (see README: "Building for the live site").`,
   );
   process.exit(1);
 }
@@ -80,7 +80,7 @@ const shadow = await esbuild.build({ ...common, entryPoints: [path.join(here, "s
 const page = await esbuild.build({ ...common, entryPoints: [path.join(here, "src/page.ts")] });
 
 // One script per engine, each matching only the sites that run that engine:
-// the v34 build is for openfront.io, the main build for the fork and the dev
+// the v34 build is for the live site, the main build for the fork and the dev
 // client. If both get installed anyway, the first to load wins (guard below).
 const target =
   kind === "v34"
