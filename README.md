@@ -4,7 +4,7 @@ A code bot/script for the OpenFront game, trained by running many headless games
 
 Developed to beat human players in online games. So far it has only been tested against the game's Impossible AI, not yet in online games. To contribute, see [below](#contributing).
 
-This repo does not include the game's source code. The game can be downloaded from the [OpenFrontIO](https://github.com/openfrontio/OpenFrontIO) repo.
+This repo does not include the game's source code. The game can be downloaded from the [OpenFrontIO](https://github.com/openfrontio/OpenFrontIO) repository.
 
 ## What's here
 - `bot/BotExecution.ts`: the bot.
