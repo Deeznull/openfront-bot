@@ -4,7 +4,7 @@ A code bot/script for the OpenFront game, trained by running many headless games
 
 Developed to beat human players in online games. So far it has only been tested against the game's Impossible AI, not yet in online games. To contribute, see [below](#contributing).
 
-This repo holds only our own code. It does not include the game itself; the game can be downloaded [here](https://github.com/openfrontio/OpenFrontIO).
+This repo does not include the game's source code. The game can be downloaded from the [OpenFrontIO](https://github.com/openfrontio/OpenFrontIO) repo.
 
 ## What's here
 - `bot/BotExecution.ts`: the bot.
@@ -12,24 +12,17 @@ This repo holds only our own code. It does not include the game itself; the game
 - `bot/tests/`: unit tests.
 - `bot/v34/`: the bot ported to game version v0.34.24.
 - `engine-patch/autoplay.patch`: a small game patch that lets the bot play solo games.
-- `userscript/`: a browser userscript that runs the bot in the game (source only; build it yourself).
+- `openfront-bot.user.js`: the ready-to-install Tampermonkey script.
+- `userscript/`: the userscript's source and build script.
 - `review-tools/`: scripts for studying replays and game data.
 - `results/online-ffa-mix/`: online FFA map mix used to pick training lobbies.
 
 ## 1. Using the bot in a game (Tampermonkey)
-1. Get the game at the version the live site runs (v0.34.24) and add the bot:
-   ```
-   git clone --branch v0.34.24 https://github.com/openfrontio/OpenFrontIO.git tools/OpenFrontIO-v0.34.24
-   mkdir -p tools/OpenFrontIO-v0.34.24/src/core/execution/bot
-   cp bot/v34/BotExecution.ts tools/OpenFrontIO-v0.34.24/src/core/execution/bot/
-   cd tools/OpenFrontIO-v0.34.24 && npm install && cd ../..
-   ```
-2. Build the userscript: `node userscript/build.mjs --repo tools/OpenFrontIO-v0.34.24`
-3. Install the [Tampermonkey](https://www.tampermonkey.net/) browser extension (Chrome, Edge, Firefox, ...). In Chrome, open the extension's details and turn on **Allow User Scripts**.
-4. Add the script: open the Tampermonkey **Dashboard**, go to **Utilities**, choose **Import from file** and pick `userscript/dist/openfront-bot-openfrontio.user.js`.
-5. Open the OpenFront website (any openfront domain works), start or join a game (any mode) and press **Start bot** in the panel at the top right.
+1. Install the [Tampermonkey](https://www.tampermonkey.net/) browser extension (Chrome, Edge, Firefox, ...). In Chrome, open the extension's details and turn on **Allow User Scripts**.
+2. Open [`openfront-bot.user.js`](openfront-bot.user.js) in this repo and click **Raw**. Tampermonkey opens and offers to install it; click **Install**.
+3. Open the OpenFront website (any openfront domain works), start or join a game (any mode) and press **Start bot** in the panel at the top right.
 
-If the site updates its game version, rebuild from the matching version. More details are in `userscript/README.md`.
+The script plays by running its own copy of the game in your browser, so it contains a compiled copy of the game engine (v0.34.24). If the site moves to a new game version, the script must be rebuilt for it: see `userscript/README.md`.
 
 ## 2. Training
 ### Setup

@@ -16,12 +16,15 @@ additions and are distributed under the same license:
   - bot/harness/* (headless test scripts that run the game engine)
   - engine-patch/autoplay.patch (a patch to the game; modified 2026)
   - userscript/* (bundles the game engine when you build it)
-The game itself is not included in this repository. setup.sh and the build
+The game's source code is not included in this repository. setup.sh and the build
 steps download it from its official public source.
 
-If you share a built userscript (userscript/dist/*.user.js), it contains the
-game engine code, so AGPL-3.0 requires you to also offer its complete
-corresponding source.
+openfront-bot.user.js (and any userscript built with userscript/build.mjs)
+contains a compiled copy of the OpenFront game engine (AGPL-3.0). Its
+corresponding source is the OpenFrontIO repository at tag v0.34.24
+(https://github.com/openfrontio/OpenFrontIO) plus bot/v34/BotExecution.ts and
+userscript/ in this repository. If you share a built userscript, AGPL-3.0
+requires you to also offer its complete corresponding source.
 
 Trademarks
 ----------

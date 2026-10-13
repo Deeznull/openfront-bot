@@ -10,21 +10,16 @@ off only when you have no player of your own (replays, spectating).
 
 ## Install
 
-1. Build it (needs the repo's `node_modules`):
-   ```bash
-   node build.mjs
-   ```
-   This writes `dist/openfront-bot.user.js` (the fork and the dev client).
-   For the live site, build `dist/openfront-bot-openfrontio.user.js` instead
-   (see "Building for the live site").
-2. Install a userscript manager (Tampermonkey or Violentmonkey). In Chrome,
-   turn on "Allow User Scripts" in the extension's details page. Don't paste
-   the file: it is about 0.85 MB and often gets cut off. Serve it instead:
-   ```bash
-   python -m http.server 8765 --bind 127.0.0.1 --directory dist
-   ```
-   Then open http://127.0.0.1:8765/openfront-bot.user.js (or
-   `openfront-bot-openfrontio.user.js`) and click **Install**.
+A ready-built script for the live site is in the repo root:
+`openfront-bot.user.js`. Install Tampermonkey (in Chrome, turn on "Allow
+User Scripts" in the extension's details page), open the file on GitHub, click
+**Raw** and then **Install**. To build it yourself instead, see "Building for
+the live site" below; then add `dist/openfront-bot-openfrontio.user.js` with
+Tampermonkey's **Dashboard → Utilities → Import from file**.
+
+1. (Dev client only) `node build.mjs` writes `dist/openfront-bot.user.js`
+   for the fork and the dev client.
+2. Install the script as above.
 3. Open the site. A small "OpenFront bot" panel appears at the top right, under the timer bar.
    - **Start bot** turns it on for the current game. Before a game, the button
      reads "Start bot (next game)" and arms the bot for the next game.
@@ -60,22 +55,15 @@ first mismatch.
 ## Building for the live site
 
 The live site runs v0.34.24, which uses the older single-package layout
-(`src/core/…`). Build from a checkout of that tag with the bot copied in:
+(`src/core/…`). Build from a checkout of that tag with the bot copied in
+(run from the repo root):
 
 ```bash
-git -C ../OpenFrontIO -c core.longpaths=true worktree add --detach ../OpenFrontIO-v0.34.24 v0.34.24
-```
-
-```bash
-npm --prefix ../OpenFrontIO-v0.34.24 ci --ignore-scripts --no-audit --no-fund --engine-strict=false
-```
-
-```bash
-mkdir -p ../OpenFrontIO-v0.34.24/src/core/execution/bot && sed -e 's#@openfront/engine-api/game/GameTypes#../../game/Game#' -e 's#@openfront/engine-api/game/GameMap#../../game/GameMap#' -e 's#@openfront/engine-lib/PseudoRandom#../../PseudoRandom#' -e 's#@openfront/engine-lib/Util#../../Util#' ../OpenFrontIO/packages/engine/src/execution/bot/BotExecution.ts > ../OpenFrontIO-v0.34.24/src/core/execution/bot/BotExecution.ts
-```
-
-```bash
-node build.mjs --repo ../OpenFrontIO-v0.34.24
+git clone --branch v0.34.24 https://github.com/openfrontio/OpenFrontIO.git tools/OpenFrontIO-v0.34.24
+mkdir -p tools/OpenFrontIO-v0.34.24/src/core/execution/bot
+cp bot/v34/BotExecution.ts tools/OpenFrontIO-v0.34.24/src/core/execution/bot/
+cd tools/OpenFrontIO-v0.34.24 && npm install && cd ../..
+node userscript/build.mjs --repo tools/OpenFrontIO-v0.34.24
 ```
 
 If the site moves to a new version, repeat this with the new tag (the page
