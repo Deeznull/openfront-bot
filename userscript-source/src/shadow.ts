@@ -108,11 +108,17 @@ export function createShadow(post: Post, onPage = false) {
    * coastal cities/ports (several boats when an enemy warship guards them),
    * a land push when our boat lands, a counter when theirs lands, warships
    * against serious naval invasions and one guard warship on an island.
-   * No even 1v1s: the AI's own attacks on players need 1.6x their troops
-   * (less when others already hit them; roulette sims: 14 -> 10 of 24 dead
-   * by 12:00).
+   * No even 1v1s: the AI's own attacks on players need 2x their troops
+   * (less when others already hit them). The frozen training set (base5,
+   * also baked into AUTOPLAY_PARAMS) adds the video-backed ally rules, a
+   * 13% reserve, the nuke gates, a strike on a lapsed ally, an early City
+   * and the graded traitor/AFK strike. Play-only on top: renewals 26 s
+   * before expiry, graded acceptance of human requests, Doomsday Clock
+   * awareness and positive emojis (the Nation ask window by difficulty
+   * exists but is off).
    */
   const PLAY_TWEAKS: Partial<BotParams> = {
+    // base5 (sets_final.json)
     snipeWeak: 0.3,
     snipeAlly: 1,
     allySelect: 1,
@@ -130,7 +136,20 @@ export function createShadow(post: Post, onPage = false) {
     navy: 1,
     factLink: 1,
     portLake: 1,
-    pvpRatio: 1.6,
+    pvpRatio: 2,
+    allyVid: 1,
+    reserve: 0.13,
+    nukeGate: 0.9,
+    nukeProv: 1,
+    lapseStrike: 0.8,
+    earlyCity: 2,
+    earlyCityMin: 3,
+    traitorK: 1,
+    // play-only (no sim signal; kept per the transfer rule)
+    renewLead: 26,
+    humanAccept: 1,
+    natWin: 0, // off: on Impossible it would change the sim-tested ask logic
+    doomAware: 1,
     emojiMode: 1, // positive, rare; 🤝 / ☢️ with alliance asks (sent only if the emoji box is ticked)
   } as any;
   let params: BotParams = { ...AUTOPLAY_PARAMS, ...PLAY_TWEAKS };

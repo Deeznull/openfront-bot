@@ -14,6 +14,11 @@ import { createGameRunner } from "ofrepo/src/core/GameRunner";
 import { FetchGameMapLoader } from "ofrepo/src/core/game/FetchGameMapLoader";
 import { GameMapType } from "ofrepo/src/core/game/Game";
 import { NationMIRVBehavior } from "ofrepo/src/core/execution/nation/NationMIRVBehavior";
+import { BotExecution as Bot } from "ofrepo/src/core/execution/bot/BotExecution";
+import { doomsdayClockRequiredTiles } from "ofrepo/src/core/game/DoomsdayClock";
+
+// doomAware: this engine has the Doomsday Clock; give the bot its bar.
+Bot.doomReq = (cfg: any, land: number, elapsed: number) => doomsdayClockRequiredTiles(cfg, land, elapsed);
 
 export type { GameRunner } from "ofrepo/src/core/GameRunner";
 export type { Game, Player } from "ofrepo/src/core/game/Game";

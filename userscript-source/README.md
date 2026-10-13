@@ -138,6 +138,28 @@ there (`npx tsc --noEmit` in that checkout).
     of our troops on boats), move our nearest warship to it or build one.
     On an island (no land neighbor but tribes), keep one guard warship by the
     biggest port once the gold is spare.
+  - Frozen training set (0.5.0; also in `AUTOPLAY_PARAMS`): `pvpRatio: 2`
+    (the AI's own attacks on players need 2x their troops), `allyVid: 1`
+    (video-backed ally rules: never ally the top two humans after 5:00, at
+    most 2 strong Nations before 3:00, re-ask hot humans), `reserve: 0.13`,
+    `nukeGate: 0.9` + `nukeProv: 1` (no nuke at a much stronger player),
+    `lapseStrike: 0.8` (hit a weaker ex-ally when the alliance lapses),
+    `earlyCity: 2` from minute 3, and `traitorK: 1` (graded strike on a
+    bordering traitor or AFK player while the 30 s debuff runs).
+  - Play-only (no sim signal; kept because replays and videos back them):
+    - `renewLead: 26`: renewals go out once 26 s are left, inside the 30 s
+      prompt window, so a late intent still lands. Kept allies only, strongest
+      first.
+    - `humanAccept: 1`: a request from a traitor, or from a bordering human
+      under half our land, is refused unless that human is strong (in replays,
+      humans refuse requesters under half their size).
+    - `doomAware: 1`: in a Doomsday Clock lobby, when our land is under (or
+      within 60 s of) the bar and we don't lead, troops the drain would take
+      go into land: free land first, then the cheapest tribe or a beatable
+      neighbour. The bar comes from the engine's `DoomsdayClock` (v0.34).
+    - `natWin` (Nation ask limit by lobby difficulty) exists but is off: on
+      Impossible it would change the sim-tested ask logic.
+    - `emojiMode: 1`: positive emojis only.
 
 ## Test
 

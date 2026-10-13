@@ -55,15 +55,15 @@ Tips:
 - Never let the agent play games itself in real time; it should only run the scripts.
 
 ## Results
-Each test game is a full free-for-all on a random map from the online 30+ player lobby mix (30-125 players). The 30+ limit follows TrackerFront, whose FFA win leaderboards count only lobbies of 30+ players. Every other player slot is the game's **Impossible** AI. The map's nations and tribes are added as in online lobbies. All games use the latest bot version.
+Each test game is a full free-for-all on a random map from the online 30+ player lobby mix (30-125 players). The 30+ limit follows TrackerFront, whose FFA win leaderboards count only lobbies of 30+ players. Every other player slot is the game's **Impossible** AI. The map's nations and tribes are added as in online lobbies. The table is the final test of bot version 0.5.0: 200 games on seeds never used in training, run once.
 
 | Lobby size | Games | Bot wins | Bot win rate | Impossible AI win rate | Bot vs Impossible |
 |---|---|---|---|---|---|
-| 30-49 players | 49 | 10 | ~20% | 2.8% | ~7x |
-| 50-79 players | 49 | 8 | ~16% | 1.7% | ~10x |
-| 80-125 players | 30 | 5 | ~17% | 1.0% | ~17x |
-| **All FFAs** | **128** | **23** | **~18%** | **~2.0%** | **~9x** |
-| Default solo game (World, 72 nations, Impossible mode) | 100 | 8 | 8% | 1.4% | ~6x |
+| 30-49 players | 75 | 13 | ~17% | 2.8% | ~6x |
+| 50-79 players | 70 | 7 | 10% | 1.7% | ~6x |
+| 80-125 players | 55 | 7 | ~13% | 1.0% | ~13x |
+| **All FFAs** | **200** | **27** | **13.5%** | **1.92%** | **~7x** |
+| Default solo game (World, 72 nations, Impossible mode) | 100 | 4 | 4% | 1.4% | ~3x |
 
 The bot was not trained by reading or exploiting the Impossible AI's source code. The Impossible AI is only used as an opponent. The goal was strategy that also works against human players in online games.
 

@@ -70,6 +70,8 @@ async function main() {
       infiniteTroops: false,
       instantBuild: false,
       randomSpawn: false,
+      // --doomsday <speed>: a Doomsday Clock lobby (engines that have it, v0.34+).
+      ...(process.argv.includes("--doomsday") ? { doomsdayClock: { enabled: true, speed: arg("doomsday", "veryfast") } } : {}),
     },
   };
   const src = await nodeMapSource(__REPO__, gameMap, GameMapSize.Normal);
@@ -264,6 +266,10 @@ async function main() {
   const me = real.game.playerByClientID(CLIENT)!;
   const secs = ((performance.now() - t0) / 1000).toFixed(0);
   console.log(`intents sent: ${JSON.stringify(counts)}`);
+  if (process.argv.includes("--doomsday")) {
+    const doomed = real.game.players().filter((p: any) => p.type() !== "BOT" && p.inDoomsdayClock?.()).length;
+    console.log(`DOOMSDAY ours flagged ${me.inDoomsdayClock?.() ?? "n/a"}, players flagged ${doomed}, our land share ${((me.numTilesOwned() / real.game.numLandTiles()) * 100).toFixed(2)}%`);
+  }
   console.log(`tribe attacks ${tribeAttacks}, snipe+ally ${snipeAllies}, ports owned ${me.units(UnitType.Port).length}, traitor ${me.isTraitor()}`);
   console.log(
     `RESULT tiles ${me.numTilesOwned()} alive ${me.isAlive()} hashes compared ${compared} mismatches ${mismatches} errors ${errors} real errors ${realErrors} tribe diplomacy ${tribeDiplomacy} (${secs}s)`,

@@ -41,7 +41,9 @@ const arg = (n, d) => {
   return i >= 0 ? process.argv[i + 1] : d;
 };
 const DIFF = arg("difficulty", "Impossible");
-const SEEDS = +arg("seeds", "12");
+// --seedList "516,519,...": explicit seed indices (with --seedPrefix) instead of a range.
+const SEED_LIST = arg("seedList", "").split(",").filter(Boolean).map(Number);
+const SEEDS = SEED_LIST.length || +arg("seeds", "12");
 const MAXMIN = arg("maxMin", "30");
 const JOBS = +arg("jobs", String(Math.max(1, os.cpus().length - 2)));
 const SETS = JSON.parse(arg("sets", "[{}]"));
@@ -180,8 +182,9 @@ function diffs(si) {
   return [...t.keys()].filter((i) => c.has(i)).sort((a, b) => a - b).map((i) => t.get(i) - c.get(i));
 }
 
-for (let start = SEED_START; start < SEED_START + SEEDS; start += BATCH) {
-  const idx = Array.from({ length: Math.min(BATCH, SEED_START + SEEDS - start) }, (_, k) => start + k);
+const ALL_IDX = SEED_LIST.length ? SEED_LIST : Array.from({ length: SEEDS }, (_, k) => SEED_START + k);
+for (let b = 0; b < ALL_IDX.length; b += BATCH) {
+  const idx = ALL_IDX.slice(b, b + BATCH);
   await runBatch(idx);
   if (SETS.length < 2 || BATCH >= SEEDS) continue;
   for (const si of alive) {
@@ -191,7 +194,7 @@ for (let start = SEED_START; start < SEED_START + SEEDS; start += BATCH) {
     else if (s && s.n >= 12 && s.lo > 0) verdict[si] = "better";
   }
   alive = alive.filter((si) => verdict[si] !== "dropped");
-  console.error(`[race] seeds ${SEED_START}..${start + idx.length - 1}: ` +
+  console.error(`[race] seeds ${ALL_IDX[0]}..${idx[idx.length - 1]}: ` +
     SETS.map((_, si) => `${si}:${verdict[si]}`).join(" "));
   if (alive.every((si) => si === CONTROL || verdict[si] !== "open")) break;
 }
