@@ -1,0 +1,145 @@
+diff --git a/packages/engine-api/src/Schemas.ts b/packages/engine-api/src/Schemas.ts
+index c20a9cc8..2eb201ea 100644
+--- a/packages/engine-api/src/Schemas.ts
++++ b/packages/engine-api/src/Schemas.ts
+@@ -281,6 +281,8 @@ export const GameConfigSchema = z.object({
+   infiniteGold: z.boolean(),
+   infiniteTroops: z.boolean(),
+   instantBuild: z.boolean(),
++  // Singleplayer only: the code bot (execution/bot) plays the human player.
++  botAutoplay: z.boolean().optional(),
+   disableNavMesh: z.boolean().optional(),
+   disableAlliances: z.boolean().nullable().optional(),
+   disableClanTags: z.boolean().optional(),
+diff --git a/packages/engine/src/GameRunner.ts b/packages/engine/src/GameRunner.ts
+index a8e5faff..ec5a378e 100644
+--- a/packages/engine/src/GameRunner.ts
++++ b/packages/engine/src/GameRunner.ts
+@@ -5,6 +5,7 @@ import {
+   GameType,
+   GameUpdates,
+   NameViewData,
++  Nation,
+   PlayerActions,
+   PlayerBorderTiles,
+   PlayerBuildableUnitType,
+@@ -24,6 +25,7 @@ import { loadTerrainMap } from "@openfront/engine-lib/game/TerrainMapLoader";
+ import { PseudoRandom } from "@openfront/engine-lib/PseudoRandom";
+ import { simpleHash } from "@openfront/engine-lib/Util";
+ import { EngineConfig } from "./configuration/EngineConfig";
++import { AUTOPLAY_PARAMS, BotExecution } from "./execution/bot/BotExecution";
+ import { DoomsdayClockExecution } from "./execution/DoomsdayClockExecution";
+ import { Executor } from "./execution/ExecutionManager";
+ import { RecomputeRailClusterExecution } from "./execution/RecomputeRailClusterExecution";
+@@ -90,9 +92,34 @@ export async function createGameRunner(
+     callBack,
+   );
+   gr.init();
++  game.addExecution(...autoplayExecutions(gameStart, humans));
+   return gr;
+ }
+ 
++/**
++ * Solo autoplay: the code bot plays each human (it spawns them and then
++ * attacks, builds and makes alliances on its own).
++ */
++export function autoplayExecutions(
++  gameStart: GameStartInfo,
++  humans: PlayerInfo[],
++): BotExecution[] {
++  if (
++    !gameStart.config.botAutoplay ||
++    gameStart.config.gameType !== GameType.Singleplayer
++  ) {
++    return [];
++  }
++  return humans.map(
++    (h) =>
++      new BotExecution(
++        `${gameStart.gameID}:${h.id}`,
++        new Nation(undefined, h),
++        AUTOPLAY_PARAMS,
++      ),
++  );
++}
++
+ /** The game's maps, from its map's files (which the game takes over). */
+ function loadGameMap(
+   config: Pick<GameStartInfo["config"], "gameMap" | "gameMapSize">,
+diff --git a/resources/lang/en.json b/resources/lang/en.json
+index 01a06956..3bdfb999 100644
+--- a/resources/lang/en.json
++++ b/resources/lang/en.json
+@@ -932,6 +932,7 @@
+     "infinite_gold": "Infinite gold",
+     "infinite_troops": "Infinite troops",
+     "instant_build": "Instant build",
++    "bot_autoplay": "Autoplay (my bot plays for me)",
+     "max_timer": "Game length (minutes)",
+     "mins_placeholder": "Mins",
+     "nations": "Nations: ",
+diff --git a/src/client/SinglePlayerModal.ts b/src/client/SinglePlayerModal.ts
+index 64dda801..d3d51983 100644
+--- a/src/client/SinglePlayerModal.ts
++++ b/src/client/SinglePlayerModal.ts
+@@ -105,6 +105,7 @@ const DEFAULT_OPTIONS = {
+   maxTimer: false,
+   maxTimerValue: undefined as number | undefined,
+   instantBuild: false,
++  botAutoplay: false,
+   randomSpawn: false,
+   useRandomMap: false,
+   gameMode: GameMode.FFA,
+@@ -182,6 +183,7 @@ export class SinglePlayerModal extends BaseModal {
+   @state() private maxTimerValue: number | undefined =
+     DEFAULT_OPTIONS.maxTimerValue;
+   @state() private instantBuild: boolean = DEFAULT_OPTIONS.instantBuild;
++  @state() private botAutoplay: boolean = DEFAULT_OPTIONS.botAutoplay;
+   @state() private randomSpawn: boolean = DEFAULT_OPTIONS.randomSpawn;
+   @state() private useRandomMap: boolean = DEFAULT_OPTIONS.useRandomMap;
+   @state() private gameMode: GameMode = DEFAULT_OPTIONS.gameMode;
+@@ -526,6 +528,10 @@ export class SinglePlayerModal extends BaseModal {
+                   disabledKey: "common.disabled",
+                 },
+                 toggles: [
++                  {
++                    labelKey: "game_settings.bot_autoplay",
++                    checked: this.botAutoplay,
++                  },
+                   {
+                     labelKey: "game_settings.instant_build",
+                     checked: this.instantBuild,
+@@ -612,6 +618,7 @@ export class SinglePlayerModal extends BaseModal {
+       this.compactMap !== DEFAULT_OPTIONS.compactMap ||
+       this.maxTimer !== DEFAULT_OPTIONS.maxTimer ||
+       this.instantBuild !== DEFAULT_OPTIONS.instantBuild ||
++      this.botAutoplay !== DEFAULT_OPTIONS.botAutoplay ||
+       this.randomSpawn !== DEFAULT_OPTIONS.randomSpawn ||
+       this.gameMode !== DEFAULT_OPTIONS.gameMode ||
+       this.goldMultiplier !== DEFAULT_OPTIONS.goldMultiplier ||
+@@ -685,6 +692,7 @@ export class SinglePlayerModal extends BaseModal {
+     this.maxTimer = DEFAULT_OPTIONS.maxTimer;
+     this.maxTimerValue = DEFAULT_OPTIONS.maxTimerValue;
+     this.instantBuild = DEFAULT_OPTIONS.instantBuild;
++    this.botAutoplay = DEFAULT_OPTIONS.botAutoplay;
+     this.randomSpawn = DEFAULT_OPTIONS.randomSpawn;
+     this.teamCount = DEFAULT_OPTIONS.teamCount;
+     this.disabledUnits = [...DEFAULT_OPTIONS.disabledUnits];
+@@ -775,6 +783,9 @@ export class SinglePlayerModal extends BaseModal {
+     const { labelKey, checked } = customEvent.detail;
+ 
+     switch (labelKey) {
++      case "game_settings.bot_autoplay":
++        this.botAutoplay = checked;
++        break;
+       case "game_settings.instant_build":
+         this.instantBuild = checked;
+         break;
+@@ -1155,6 +1166,7 @@ export class SinglePlayerModal extends BaseModal {
+                 donateTroops: this.gameMode === GameMode.Team,
+                 infiniteTroops: this.infiniteTroops,
+                 instantBuild: this.instantBuild,
++                ...(this.botAutoplay ? { botAutoplay: true } : {}),
+                 randomSpawn: this.randomSpawn,
+                 disabledUnits: this.disabledUnits.filter(
+                   (unit): unit is UnitType =>

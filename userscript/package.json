@@ -1,0 +1,9 @@
+{
+  "name": "openfront-bot-userscript",
+  "version": "0.3.5",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs"
+  }
+}
