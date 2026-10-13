@@ -76,7 +76,7 @@ cd tools/OpenFrontIO-v0.34.24 && npm install && cd ../..
 node userscript/build.mjs --repo tools/OpenFrontIO-v0.34.24
 ```
 
-If the site moves to a new version, repeat this with the new tag (the page
+If the site moves to a new version and mirror mode can't follow it, repeat this with the new tag (the page
 footer and the `@description` show the versions). The bot must still compile
 there (`npx tsc --noEmit` in that checkout).
 
