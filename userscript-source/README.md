@@ -73,7 +73,7 @@ git clone --branch v0.34.24 https://github.com/openfrontio/OpenFrontIO.git tools
 mkdir -p tools/OpenFrontIO-v0.34.24/src/core/execution/bot
 cp bot/v34/BotExecution.ts tools/OpenFrontIO-v0.34.24/src/core/execution/bot/
 cd tools/OpenFrontIO-v0.34.24 && npm install && cd ../..
-node userscript/build.mjs --repo tools/OpenFrontIO-v0.34.24
+node userscript-source/build.mjs --repo tools/OpenFrontIO-v0.34.24
 ```
 
 If the site moves to a new version and mirror mode can't follow it, repeat this with the new tag (the page

@@ -13,7 +13,7 @@ This repository does not include the game's source code. The game can be downloa
 - `bot/tests/`: unit tests.
 - `bot/v34/`: the bot ported to game version v0.34.24.
 - `engine-patch/autoplay.patch`: a small game patch that lets the bot play solo games.
-- `userscript/`: the userscript's source and build script.
+- `userscript-source/`: the source code and build script of the Tampermonkey script.
 - `review-tools/`: scripts for studying replays and game data.
 - `results/online-ffa-mix/`: online FFA map mix used to pick training lobbies.
 
@@ -22,7 +22,7 @@ This repository does not include the game's source code. The game can be downloa
 2. Open [`openfront-bot.user.js`](openfront-bot.user.js) and click the **Copy raw file** button. In Tampermonkey, choose **Create a new script**, replace everything in the editor with what you copied, and save (Ctrl+S).
 3. Enter the game website, start or join a game (any mode) and press **Start bot** in the panel at the top right.
 
-The script is made for game version v0.34.24. On newer versions it keeps playing by following the live game, until a version changes too much; then it must be rebuilt (see `userscript/README.md`). Installed copies update themselves when a rebuilt script is pushed here.
+The script is made for game version v0.34.24. On newer versions it keeps playing by following the live game, until a version changes too much; then it must be rebuilt (see `userscript-source/README.md`). Installed copies update themselves when a rebuilt script is pushed here.
 
 ## 2. Training
 ### Setup
