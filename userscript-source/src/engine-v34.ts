@@ -115,16 +115,31 @@ class AnyMapLoader extends FetchGameMapLoader {
 }
 
 /**
- * Saves the AI state that is shared between nations through statics (here the
- * MIRV pile-on cooldown map) and returns a function that puts it back. The bot
- * step runs between the two, so whatever it records never reaches the nations.
+ * Saves the AI state that is shared between nations (the MIRV pile-on
+ * cooldown map, a static) or kept by the game (the shared-water cache, which
+ * rebuilds at most every 30 ticks on the first call, so a bot call at another
+ * tick moves the nations' port and factory choices) and returns a function
+ * that puts it back. The bot step runs between the two, so whatever it
+ * records never reaches the nations.
  */
-export function saveSharedAiState(): () => void {
+export function saveSharedAiState(g?: unknown): () => void {
+  const restoreWater = saveWaterCache(g);
   const m = (NationMIRVBehavior as any).recentMirvTargets as Map<string, number> | undefined;
-  if (!m) return () => {};
+  if (!m) return restoreWater;
   const copy = new Map(m);
   return () => {
     m.clear();
     for (const [k, v] of copy) m.set(k, v);
+    restoreWater();
+  };
+}
+
+function saveWaterCache(g: unknown): () => void {
+  const c = (g as any)?._sharedWaterCache;
+  if (!c) return () => {};
+  const { tick, byPlayer } = c;
+  return () => {
+    c.tick = tick;
+    c.byPlayer = byPlayer;
   };
 }

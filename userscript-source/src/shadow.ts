@@ -150,6 +150,21 @@ export function createShadow(post: Post, onPage = false) {
     finishFloor: 0.6,
     baitHuman: 1, // ally-bait boats only into humans no stronger than us
     structTarget: 0.5, // prefer neighbours whose cities/ports/factories our attack can reach
+    // 0.5.2 live-play fixes (owner reports 2026-10-14; quick sim on tf0-15)
+    regenKeep: 0.35, // tribe attacks keep 35% of max troops home (regen ~94% of peak + reserve)
+    wWater: 1.5, // spawn near ocean (or a lake); maps without water are unaffected
+    snipeSmall: 0.01, // port snipes land on the port tile with 1% of our troops
+    trigMax: 0.7, // attack once troops reach 70% of max (was up to ~90%; regen is slow near the cap)
+    sendKeep: 0.7, // Hard/Impossible send cap keeps 0.7x (not 0.9x) the strongest non-ally home; allies letting the alliance run out count
+    foodAll: 1, // a player under 0.4x our strength is no ally, bordering or overseas
+    humansOnly: 1, // never ally AI Nations
+    farAlly: 1, // a player we don't border is no ally unless its combined far threat (silo, bomb gold, nuked/embargoed us, captured our ships, boats at us, strength) scores >= 1
+    mirvRich: 1.5, // no runaway but gold piling up: MIRV the biggest non-ally when (gold/cost) x (its land/ours) >= 1.5 and it has >= 0.6x our land
+    mirvSave: 2, // bank gold for a MIRV only against a runaway (2x our land, 1.5x our power, wins within ~20 min) when our income affords it in time
+    wildSize: 1.5, // boats into empty land carry 1.5x what that land costs, not a fifth of our army
+    postSpread: 1.5, // AI defense posts never inside another post's cover (overlap adds no defense)
+    minKeep: 0.2, // hard floor: no attack or boat (kills included) leaves under 20% of max troops home (owner request)
+    homeKeep: 0.3, // every attack/boat leaves max(30% of max troops, defense floor) + incoming attackers home; a kill may dip to the defense floor
     // play-only (no sim signal; kept per the transfer rule)
     renewLead: 26,
     humanAccept: 1,
@@ -205,6 +220,21 @@ export function createShadow(post: Post, onPage = false) {
     drain();
   }
 
+  // Our attack and boat intents on their way to the game: sent, not yet in a
+  // turn. Their troops are still ours in this engine, so the bot gets their
+  // sum (inflightTroops) and its home keep doesn't spend them a second time.
+  // An intent the page dropped never lands: entries expire after INFLIGHT_TICKS.
+  const INFLIGHT_TICKS = 50;
+  let inflight: { troops: number; tick: number }[] = [];
+  function landed(turn: any) {
+    if (inflight.length === 0) return;
+    for (const i of turn?.intents ?? []) {
+      if (i?.clientID !== clientID || (i.type !== "attack" && i.type !== "boat")) continue;
+      const k = inflight.findIndex((x) => x.troops === i.troops);
+      if (k >= 0) inflight.splice(k, 1);
+    }
+  }
+
   function drain() {
     if (!runner || draining) return;
     draining = true;
@@ -215,6 +245,7 @@ export function createShadow(post: Post, onPage = false) {
         // Mirror mode: no further ahead than the real game (its tick-N
         // update is what corrects our tick N).
         if (mirror.holds(r.game.ticks() + 1, turns.length - fed)) break;
+        landed(turns[fed]);
         r.addTurn(turns[fed++]);
         r.executeNextTick();
         if (!CAN_SNAPSHOT) mirror.sync(r.game);
@@ -296,11 +327,18 @@ export function createShadow(post: Post, onPage = false) {
       log(`bot attached to ${me.name()} (${me.id()})`);
     }
     if (!bot.isActive() || !me.isAlive() && !g.inSpawnPhase()) return;
-    const out = capture(g, () => bot!.tick(g.ticks()));
+    const now = g.ticks();
+    inflight = inflight.filter((x) => now - x.tick < INFLIGHT_TICKS);
+    (bot as any).inflightTroops = inflight.reduce((a, x) => a + x.troops, 0);
+    const out = capture(g, () => bot!.tick(now));
     const intents: Intent[] = [];
     for (const c of out) {
       const i = translate(g, me, c);
-      if (i && !aimedAtTribe(g, me, i)) intents.push(i);
+      if (i && !aimedAtTribe(g, me, i)) {
+        intents.push(i);
+        if ((i.type === "attack" || i.type === "boat") && typeof i.troops === "number" && i.troops > 0)
+          inflight.push({ troops: i.troops, tick: now });
+      }
     }
     if (intents.length > 0) post({ t: "intents", tick: g.ticks(), intents });
     if (g.ticks() % 10 === 0) {
@@ -328,7 +366,7 @@ export function createShadow(post: Post, onPage = false) {
     const P = PlayerImpl.prototype as any;
     const R = AllianceRequestImpl.prototype as any;
     const U = UnitImpl.prototype as any;
-    const restoreShared = saveSharedAiState();
+    const restoreShared = saveSharedAiState(g);
     const saved = {
       add: Object.prototype.hasOwnProperty.call(ga, "addExecution") ? ga.addExecution : undefined,
       ur: P.updateRelation,
@@ -552,6 +590,7 @@ export function createShadow(post: Post, onPage = false) {
         clientID = m.clientID;
         mapSource = m.mapSource ?? { files: m.map };
         turns.length = 0;
+        inflight = [];
         spawnSent = false;
         mirror = new Mirror(post, mySmallID);
         start(m.snapshot, true).catch((e) => post({ t: "error", msg: `shadow init failed: ${e?.message ?? e}` }));

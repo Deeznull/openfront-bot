@@ -55,7 +55,18 @@ export function createRunner(
     : createGameRunner(gameStartInfo, clientID, map, cb);
 }
 
-/** This engine keeps no AI state in statics, so there is nothing to save. */
-export function saveSharedAiState(): () => void {
-  return () => {};
+/**
+ * This engine keeps no AI state in statics, but the game's shared-water cache
+ * rebuilds at most every 30 ticks on the first call, so a bot call at another
+ * tick would move the nations' port and factory choices. Saves it and returns
+ * a function that puts it back after the bot step.
+ */
+export function saveSharedAiState(g?: unknown): () => void {
+  const c = (g as any)?._sharedWaterCache;
+  if (!c) return () => {};
+  const { tick, byPlayer } = c;
+  return () => {
+    c.tick = tick;
+    c.byPlayer = byPlayer;
+  };
 }

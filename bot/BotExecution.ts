@@ -7,7 +7,7 @@
  * through `any` (tsx does no type-check of privacy at runtime).
  */
 import type { Game, Player } from "../../game/Game";
-import { Difficulty, Nation, PlayerType, Relation, TerrainType, UnitType } from "@openfront/engine-api/game/GameTypes";
+import { Difficulty, GameMode, Nation, PlayerType, Relation, TerrainType, UnitType } from "@openfront/engine-api/game/GameTypes";
 import type { TileRef } from "@openfront/engine-api/game/GameMap";
 import { PseudoRandom } from "@openfront/engine-lib/PseudoRandom";
 import { simpleHash } from "@openfront/engine-lib/Util";
@@ -39,6 +39,7 @@ export interface BotParams {
   wDist: number; // weight: distance to nearest nation/human spawn
   wLand: number; // weight: land density around the tile
   wTribe: number; // weight: tribes nearby (easy early food)
+  wWater: number; // weight: ocean (1) or lake (0.5) near the spawn, faded with distance (ports, boats, trade); a map without water scores 0 everywhere
   distCap: number; // distance (tiles) beyond which a rival is "far enough"
   defK: number; // keep troops >= defK x strongest bordering nation/human (KNOWLEDGE S28)
   defMin: number; // keep troops >= defMin x own max troops (out of 'veryWeak' filter)
@@ -69,6 +70,7 @@ export interface BotParams {
   snipeEvery: number; // ticks between snipe checks
   snipeHome: number; // only snipe when troops >= snipeHome x max troops
   snipeWeak: number; // only snipe "losing" players: under attack, or troops < snipeWeak x their max (1 = anyone)
+  snipeSmall: number; // >0 = a snipe boat that lands on the structure's own tile carries only snipeSmall x our troops (the landing conquers that tile, TransportShipExecution, so the port/city flips whatever the boat holds); a landing beside it keeps the snipeK size
   snipeAlly: number; // 1 = also snipe far (non-bordering) players we could ally with, and ask them for an alliance right after the boat
   grab: number; // 1 = land-attack weak bordering players whose structures sit near our border
   grabUntil: number; // minutes the grab behavior is active (early game)
@@ -99,6 +101,14 @@ export interface BotParams {
   allyVid: number; // 1 = video/replay alliance rules (KNOWLEDGE AL-014/016/018/027): ask every near non-food human, re-ask every 30-120 s, ask humans at war even when far/over cap, no #1/#2 human after 5:00, max 2 strong-only Nation asks before 3:00
   allyHStrong: number; // 1 = ask bordering humans for alliances when they are strong (allyStrong) or attacking us
   allyStrong: number; // a player with troops >= allyStrong x ours is a threat: always accept, renew and ask
+  mirvSave: number; // >0 = graded MIRV bank: a non-ally with >= mirvSave x our land and >= 1.5x our power that wins within ~20 min (or holds >= 35% of the land) makes us stop AI builds/warships/nukes and bank gold, but only while our measured income affords MIRV (+ silo) before its win ETA; fired at once when affordable, then the mirvBank land follow-up
+  mirvRich: number; // >0 (needs mirvSave) = with no runaway, gold >= MIRV (+ silo if none) and the biggest non-ally land holder: MIRV it when (gold / cost) x (its land / ours) >= mirvRich and its land >= 0.6x ours (owner: "bot had so much money but he didnt even merv")
+  postSpread: number; // >0 = the Nation AI's defense-post spots must be >= postSpread x defensePostRange from each of our posts (a post's bonus is all-or-nothing per tile, overlapping cover adds nothing; v0.34 falls back to stacking once the front is covered)
+  homeKeep: number; // >0 = every attack and boat we send (own logic and Nation AI) leaves max(homeKeep (regen ~94% of peak at .30), defense floor) x maxTroops plus the troops attacking us by land at home; sends in one tick add up. A send is trimmed to what is above that, or held if under half survives. A kill (send >= 2x the target's troops, target < 20% of our land) may go down to the defense floor; troops of an attacker we hit back are not kept (the hit cancels them 1:1); off in the doomsday clock
+  minKeep: number; // >0 = hard floor: no send of ours (attack or boat, kills included) leaves fewer than minKeep x maxTroops (+ incoming land attackers) home (owner 2026-10-14: "can bot never ever get below 20 percent max troop")
+  wildSize: number; // >0 = an AI boat to unowned land carries wildSize x the troops its connected wilderness costs to take (sum of per-tile attacker losses), at least 200, never more than the AI chose; a wilderness over 4000 tiles keeps the AI size
+  farAlly: number; // >0 = a player we don't border is no ally (no accept, renewal, ask or ally-bait boat) unless it can hurt us from afar (farThreat score >= 1, no single factor is enough: silo .5, gold for a hydrogen bomb +.5 / atom bomb +.25, nuked us +2, embargoes us +.5, each of our trade ships it captured in the last 10 min +.5, its boats at our land 5 x their troops / ours, strong +.5)
+  humansOnly: number; // >0 = never ally AI Nations (no ask, accept or renewal; live play: "never ally with non-players")
   allyFood: number; // a bordering player with troops < allyFood x ours is food: no alliance (allies box us in), let it lapse
   allyMax: number; // max alliances (0 = engine cap only: Impossible nations refuse anyone allied with >= 25% of players, Hard 50%)
   crownGate: number; // 1 = hit the runaway leader only when it is exposed, others are already hitting it, or the politics allow a war with it
@@ -130,6 +140,9 @@ export interface BotParams {
   tribeHunt: number; // 1 = kill any bordering tribe as soon as the kill fits above the expand floor (no waiting for the trigger ratio)
   tribeFinish: number; // 1 = finish every tribe we attacked (top up the running attack to the kill), kill-steal any bordering tribe someone else attacks (allies too), hunt a bordering tribe once its kill fits; replaces tribeSteal
   finishFloor: number; // tribeFinish keeps max(reserve, finishFloor x defense floor) x maxTroops at home
+  trigMax: number; // >0 = the attack trigger never needs more than this troop/max ratio (the defense floor then tops out at trigMax - 0.08); waiting for ~90% halves regen and idles the bot for minutes
+  sendKeep: number; // >0 = on Hard/Impossible the inherited send cap keeps sendKeep (not 0.75/0.9) x the strongest non-friendly neighbour home
+  regenKeep: number; // >0 = every tribe attack (Nation AI sends, boats, tribeFinish) keeps max(regenKeep, defense floor) x maxTroops at home; regen (10 + T^0.73/4)(1 - T/max) peaks near 0.42 max, ~94% of peak at 0.30, ~64% at 0.13
   structTarget: number; // >0 = Nation-AI player targets are compared by troops x front cover / (1 + structTarget x value of their cities/ports/factories, faded by attack reach through terrain and defense posts); the cheapest beatable one is hit (structures flip to us on capture)
   baitHuman: number; // >0 = snipeAlly ally-bait boats go to a human only if its troops <= baitHuman x ours (a refused bait boat dies and makes an enemy)
   pvpRatio: number; // Nation-AI attacks on real players need our troops >= pvpRatio x theirs, less when others already hit them (0 = off)
@@ -165,6 +178,7 @@ export interface BotParams {
   richTarget: number; // 1 = from 5:00, targets passing the ratio gate score richW x min(3, gold / max(our gold, next City cost)) more; veto a >=10M-gold silo owner unless troops >= 2x it
   richW: number;
   mirvBank: number; // 1 = bank gold for a MIRV (min >= 15 or land >= 25%, own silo, a rival >= 0.5x our land or the leader, incoming < 0.25x): save-up target = MIRV cost, then MIRV the rival and land-attack within 10 s if troops >= 1.22x its remaining
+  boatStrike: number; // 1 = overseas strike at traitors / disconnected players, 2 = at any player (r054: 2 lost wins) (owner: "ignoring overseas traitor targets"; attacks graded on enemy max troops, regen and others hitting it). Every 3 s, with a free boat slot, < 0.3x ours incoming and < 0.3x ours already out: for a non-bordering human/Nation we can attack, need = 1.3 x (traitor 0.6) x (targetEff (others' attacks ease it, its helpers add) + its regen over boat travel + 15 s, slowing toward and capped at its max troops); only targets whose need <= our troops above max(homeKeep, defense floor) x maxT; score = its land / need x (traitor 1.5, its troops < 30% of its max 1.3) / (1 + travel/200); one boat of need to its nearest reachable coast; 60 s per target
   boatChain: number; // 1 = 10-30 s after opening a land attack on a human/Nation T (<= 0.8x our troops), boat 10-20% of our troops to a reachable T coast tile off our front; 1 per target per 60 s
   capBot: number; // >0 = stalled at the troop cap: sends at barbarians may use up to this fraction of our troops, ignoring the keep-0.9x-neighbour cap
   capPush: number; // >0 = stalled at the troop cap (>=95% max, no land gain for 30 s): pvpRatio drops to this vs a human others already hit
@@ -184,6 +198,7 @@ export const DEFAULT_PARAMS: BotParams = {
   wDist: 1,
   wLand: 1,
   wTribe: 0.5,
+  wWater: 0,
   distCap: 120,
   defK: 0,
   defMin: 0,
@@ -215,6 +230,7 @@ export const DEFAULT_PARAMS: BotParams = {
   snipeHome: 0.3,
   snipeWeak: 0.3,
   snipeAlly: 0,
+  snipeSmall: 0,
   grab: 0,
   grabUntil: 15,
   grabRel: 0.6,
@@ -245,6 +261,14 @@ export const DEFAULT_PARAMS: BotParams = {
   allyHStrong: 0,
   allyStrong: 0.7,
   allyFood: 0.4,
+  mirvSave: 0,
+  mirvRich: 0,
+  wildSize: 0,
+  homeKeep: 0,
+  minKeep: 0,
+  postSpread: 0,
+  farAlly: 0,
+  humansOnly: 0,
   allyMax: 0,
   allyWarn: 300,
   endAlly: 0,
@@ -275,6 +299,9 @@ export const DEFAULT_PARAMS: BotParams = {
   tribeHunt: 0,
   tribeFinish: 0,
   finishFloor: 0.6,
+  regenKeep: 0,
+  trigMax: 0,
+  sendKeep: 0,
   baitHuman: 0,
   structTarget: 0,
   pvpRatio: 0,
@@ -311,6 +338,7 @@ export const DEFAULT_PARAMS: BotParams = {
   richW: 0.5,
   mirvBank: 0,
   boatChain: 0,
+  boatStrike: 0,
   capBot: 0,
   capPush: 0,
   renewLead: 0,
@@ -416,7 +444,125 @@ export class BotExecution extends NationExecution {
     this.hookChat(mg); // inert while kin is 0 (UI can switch it on mid-game)
   }
 
+  // Owner 2026-10-14: "the bot attack with all of its troops sometimes that is
+  // really bad it must consider optimal troop growth rate for every attack or
+  // defence". Every send of ours passes keepHome() first.
   tick(ticks: number) {
+    const me: Player | null = (this as any).player ?? null;
+    if ((this.params.homeKeep <= 0 && this.params.minKeep <= 0) || me === null) return this.tickBody(ticks);
+    const g = this.botGame as any;
+    const orig = g.addExecution;
+    this.homePending = 0;
+    this.nukeHold = this.nukeLoss(me);
+    g.addExecution = (...exs: any[]) => orig.apply(g, exs.filter((e) => this.keepHome(me, e)));
+    try {
+      this.tickBody(ticks);
+    } finally {
+      g.addExecution = orig;
+    }
+  }
+
+  public homeTrimmed = 0;
+  // Enemy nukes on their way to our land, for keepHome: `keep` is the share of
+  // our troops an atom/hydrogen bomb leaves (it removes 5·troops/tiles per tile
+  // it takes, from home and from our attacks alike, so sending doesn't save
+  // them), `loss` what MIRV warheads take (up to 500 a tile). A bomb can land in
+  // the same tick as our send, before it: World/Easy, a 22M send sized on the
+  // pre-blast troops left 9% of max after an H-bomb (owner: never below 20%).
+  private nukeHold = { keep: 1, loss: 0 };
+  private nukeLoss(me: Player): { keep: number; loss: number } {
+    const g = this.botGame;
+    const T = Math.max(1, me.numTilesOwned());
+    let keep = 1;
+    let loss = 0;
+    for (const u of g.units(UnitType.AtomBomb, UnitType.HydrogenBomb, UnitType.MIRVWarhead)) {
+      const t = u.targetTile();
+      if (u.owner() === me || t === undefined || g.owner(t) !== me) continue;
+      const m = g.config().nukeMagnitudes(u.type());
+      // all of the inner circle and about half of the ring are taken
+      const k = Math.min(T, (Math.PI * (m.inner * m.inner + m.outer * m.outer)) / 2);
+      if (u.type() === UnitType.MIRVWarhead) loss += 500 * k;
+      else {
+        const q = 1 - k / T;
+        keep *= q * q * q * q * q;
+      }
+    }
+    return { keep: Math.max(keep, 0.05), loss };
+  }
+  public homeHeld = 0;
+  private homePending = 0;
+  // Troops of our sends that are still on their way to the game (a client
+  // plays through intents that land a few ticks later; set by the userscript
+  // each tick). Until they land me.troops() still counts them, so without
+  // this every tick re-spent the same troops and the game, which caps a send
+  // at what is left, took the bot down to ~1% of max troops (World/Easy).
+  public inflightTroops = 0;
+  // Owner 2026-10-14: "it sometimes defence posts onto each other, if 2 defence
+  // posts protection intersects it doesnt make that 10x slowth".
+  private patchPostSpread(sb: any) {
+    sb.__spread = true;
+    if (typeof sb.sampleTilesNearFront !== "function") return;
+    const orig = sb.sampleTilesNearFront.bind(sb);
+    sb.sampleTilesNearFront = (front: TileRef[], count: number, type: UnitType): TileRef[] => {
+      const out: TileRef[] = orig(front, count, type);
+      if (type !== UnitType.DefensePost) return out;
+      const g = this.botGame;
+      const me: Player = sb.player;
+      const r = this.params.postSpread * g.config().defensePostRange();
+      const posts = me.units(UnitType.DefensePost).map((u) => u.tile());
+      return out.filter((t) => posts.every((p) => g.euclideanDistSquared(t, p) >= r * r));
+    };
+  }
+
+  /** Trims (or holds) a send of ours so the regen/defense home keep stays. */
+  private keepHome(me: Player, e0: unknown): boolean {
+    const e = e0 as any;
+    let field: "startTroops" | "troops";
+    let target: Player | null = null;
+    const g = this.botGame;
+    if (e0 instanceof AttackExecution) {
+      const x = e;
+      if (x._owner !== me || x.removeTroops === false || typeof x.startTroops !== "number") return true;
+      field = "startTroops";
+      if (x._targetID !== null && g.hasPlayer(x._targetID)) target = g.player(x._targetID);
+    } else if (e0 instanceof TransportShipExecution) {
+      const x = e;
+      if (x.attacker !== me || typeof x.troops !== "number") return true;
+      field = "troops";
+      const o = g.owner(x.ref);
+      if (o.isPlayer()) target = o as Player;
+    } else return true;
+    if (typeof (me as any).inDoomsdayClock === "function" && (me as any).inDoomsdayClock() === true) return true;
+    const send: number = e[field];
+    if (!(send > 0)) return true;
+    const maxT = g.config().maxTroops(me);
+    let incoming = 0;
+    for (const a of me.incomingAttacks()) if (a.attacker() !== target) incoming += a.troops();
+    const kill = target !== null && send >= 2 * target.troops() && target.numTilesOwned() < 0.2 * me.numTilesOwned();
+    const self = this as any;
+    const floor = self.reserveRatio ?? this.params.reserve;
+    const frac = Math.max(this.params.minKeep, kill ? floor : Math.max(this.params.homeKeep, floor));
+    // With a bomb on its way the floor must hold whether it lands before our
+    // send (the game then caps the send at what's left) or after it.
+    const nk = this.nukeHold;
+    const T = me.troops();
+    const base = nk.keep < 1 ? Math.min(T * nk.keep - frac * maxT, T - (frac * maxT) / nk.keep) : T - frac * maxT;
+    const avail = base - this.homePending - this.inflightTroops - nk.loss - incoming;
+    if (avail >= send) {
+      this.homePending += send;
+      return true;
+    }
+    if (avail < 1 || avail < 0.5 * send) {
+      this.homeHeld++;
+      return false;
+    }
+    e[field] = Math.floor(avail);
+    this.homePending += e[field];
+    this.homeTrimmed++;
+    return true;
+  }
+
+  private tickBody(ticks: number) {
     if (this.botGame.inSpawnPhase() && !this.spawnSent) {
       // Clan members stagger their spawn so later ones see the earlier ones.
       const tag = this.botNation.playerInfo.clanTag;
@@ -490,12 +636,16 @@ export class BotExecution extends NationExecution {
       sb.__fact = true;
     }
     if (this.params.earlyCity > 0 && sb && !sb.__early) this.patchEarlyCity(sb);
+    if (this.params.postSpread > 0 && sb && !sb.__spread) this.patchPostSpread(sb);
     if (this.params.earlySilo > 0 && sb && !sb.__silo) this.patchSilo(sb);
     if (this.params.counterNuke > 0 && ticks % 10 === 1) this.counterNukeTick(ticks);
     if (this.params.lapseStrike > 0 && ticks % 10 === 2) this.lapseStrikeTick(ticks);
+    if (this.params.farAlly > 0 && ticks % 5 === 1 && self.player) this.trackPiracy(self.player, ticks);
     if (this.params.traitorK > 0 && ticks % 10 === 3) this.traitorStrikeTick(ticks);
-    if (this.params.mirvBank > 0 && ticks % 10 === 4) this.mirvBankTick(ticks);
+    if ((this.params.mirvBank > 0 || this.params.mirvSave > 0) && ticks % 10 === 4) this.mirvBankTick(ticks);
+    if (this.params.mirvSave > 0 && !self.__mirvLock && self.structureBehavior) this.patchMirvLock(self);
     if (this.params.boatChain > 0 && ticks % 10 === 5) this.boatChainTick(ticks);
+    if (this.params.boatStrike > 0 && ticks % 30 === 11) this.boatStrikeTick(ticks);
     if (this.params.defPost > 0 && ticks % 50 === 6) this.defPostTick();
     if (this.params.doomAware > 0 && ticks % 10 === 8) this.doomTick(ticks);
     if (this.params.pirate > 0 && ticks % Math.max(10, Math.round(this.params.pirateEvery)) === 0) this.pirate();
@@ -506,7 +656,53 @@ export class BotExecution extends NationExecution {
       delete sb.isInPostSaveUpBlockedPhase;
       sb.__econOff = true;
     }
-    super.tick(ticks);
+    if (this.params.wildSize > 0 && self.player) this.sizedTick(self.player, ticks);
+    else super.tick(ticks);
+  }
+
+  // Owner 2026-10-14: "it jsut sat there having max troops and send 100k boat
+  // to wolderness". The Nation AI sizes wilderness boats at troops/5. The
+  // wilderness a boat lands in costs only its tiles' attacker losses (mag/5:
+  // plains 16, highland 20, mountain 24 a tile), so the rest stays home.
+  public wildTrimmed = 0;
+  private sizedTick(me: Player, ticks: number) {
+    const g = this.botGame as any;
+    const orig = g.addExecution;
+    g.addExecution = (...exs: any[]) => {
+      for (const e of exs) {
+        if (!(e instanceof TransportShipExecution)) continue;
+        const x = e as any;
+        if (x.attacker !== me || this.botGame.hasOwner(x.ref) || !this.botGame.isLand(x.ref)) continue;
+        const need = this.wildNeed(x.ref);
+        if (need !== null && need < x.troops) { x.troops = need; this.wildTrimmed++; }
+      }
+      return orig.apply(g, exs);
+    };
+    try {
+      super.tick(ticks);
+    } finally {
+      g.addExecution = orig;
+    }
+  }
+  /** Troops to take the unowned land connected to t (null = over 4000 tiles). */
+  private wildNeed(t: TileRef): number | null {
+    const g = this.botGame;
+    const map = g.map();
+    const seen = new Set<TileRef>([t]);
+    const queue: TileRef[] = [t];
+    let cost = 0;
+    for (let i = 0; i < queue.length; i++) {
+      const c = queue[i];
+      const k = map.terrainType(c);
+      cost += k === TerrainType.Mountain ? 24 : k === TerrainType.Highland ? 20 : 16;
+      if (queue.length > 4000) return null;
+      for (const n of map.neighbors(c)) {
+        if (seen.has(n) || !map.isLand(n) || g.hasOwner(n)) continue;
+        seen.add(n);
+        queue.push(n);
+      }
+    }
+    return Math.max(200, Math.ceil(this.params.wildSize * cost));
   }
 
   // Pirating: warships capture non-friendly trade ships in open water within
@@ -801,13 +997,89 @@ export class BotExecution extends NationExecution {
     }
   }
 
+  // humansOnly applies only while another human is in the game: in a solo
+  // game (us vs Nations only) refusing every Nation got the bot ganged up on
+  // and killed by minute 5 in 6 of 8 World/Impossible test runs (2/8 alive vs 7/8).
+  private humansSeen: boolean | null = null;
+  private humansAt = -1e9;
+  private humansOnlyOn(me: Player): boolean {
+    if (this.params.humansOnly <= 0) return false;
+    const t = this.botGame.ticks();
+    if (this.humansSeen === null || t - this.humansAt >= 300) {
+      this.humansSeen = this.botGame.players().some((p) => p !== me && p.type() === PlayerType.Human);
+      this.humansAt = t;
+    }
+    return this.humansSeen;
+  }
   /** "strong" = threat worth allying, "food" = weak neighbor we'd rather eat. */
   private allyKind(me: Player, o: Player): "strong" | "food" | "ok" {
     if (o.type() === PlayerType.Bot) return "food";
+    // Owner 2026-10-14: "never ally with non-players".
+    if (o.type() === PlayerType.Nation && this.humansOnlyOn(me)) return "food";
+    // Owner 2026-10-14: "allying far players doesnt benefit at all, only do if
+    // all political sitations fit and if they have a silo or pirating us".
+    // Checked before "strong": a far player without silo, piracy or boats
+    // can't reach us however big it is (the rest of the ally logic still decides).
+    if (this.params.farAlly > 0 && !me.sharesBorderWith(o) && this.farThreat(me, o) < 1) return "food";
     const ratio = this.power(o) / Math.max(1, this.power(me));
     if (ratio >= this.params.allyStrong) return "strong";
     if (ratio < this.params.allyFood && me.sharesBorderWith(o)) return "food";
     return "ok";
+  }
+
+  // Trade ship captures, seen as owner changes (the "trade ship captured"
+  // messages): last tick we took one of o's ships, ticks o took ours (last 10 min);
+  // nukes of anyone aimed within 30 tiles of our land.
+  private shipOwner = new Map<number, Player>();
+  private piracy = new Map<Player, { byUs: number; byThem: number[] }>();
+  private trackPiracy(me: Player, ticks: number) {
+    const now = new Map<number, Player>();
+    for (const u of this.botGame.units(UnitType.TradeShip)) {
+      const o = u.owner();
+      const was = this.shipOwner.get(u.id());
+      if (was !== undefined && was !== o && (o === me || was === me)) {
+        const other = o === me ? was : o;
+        const r = this.piracy.get(other) ?? { byUs: -1e9, byThem: [] };
+        if (o === me) r.byUs = ticks;
+        else r.byThem.push(ticks);
+        r.byThem = r.byThem.filter((t) => ticks - t <= 6000);
+        this.piracy.set(other, r);
+      }
+      now.set(u.id(), o);
+    }
+    this.shipOwner = now;
+    for (const u of this.botGame.units(UnitType.AtomBomb, UnitType.HydrogenBomb, UnitType.MIRV)) {
+      const t = u.targetTile();
+      if (u.owner() !== me && t !== undefined && this.landNear(me, t, 30)) this.nukedUs.add(u.owner());
+    }
+  }
+  private nukedUs = new Set<Player>();
+  /**
+   * How much a player we don't border can hurt us from afar. Owner 2026-10-14:
+   * "just having 1 silo is etc is not a good reason ... i mean by itself only".
+   */
+  private farThreat(me: Player, o: Player): number {
+    const g = this.botGame;
+    let score = 0;
+    if (o.unitCount(UnitType.MissileSilo) > 0) {
+      score += 0.5;
+      const gold = o.gold();
+      if (!g.config().isUnitDisabled(UnitType.HydrogenBomb) && gold >= g.unitInfo(UnitType.HydrogenBomb).cost(g, o)) score += 0.5;
+      else if (!g.config().isUnitDisabled(UnitType.AtomBomb) && gold >= g.unitInfo(UnitType.AtomBomb).cost(g, o)) score += 0.25;
+    }
+    // Owner 2026-10-14: "having nuked us must have more weight, or embargoed us".
+    if (this.nukedUs.has(o)) score += 2;
+    if (o.hasEmbargoAgainst(me)) score += 0.5;
+    const r = this.piracy.get(o);
+    if (r !== undefined) score += 0.5 * r.byThem.filter((t) => g.ticks() - t <= 6000).length;
+    let boats = 0;
+    for (const u of o.units(UnitType.TransportShip)) {
+      const t = u.targetTile();
+      if (t !== undefined && g.owner(t) === me) boats += u.troops();
+    }
+    score += (5 * boats) / Math.max(1, me.troops());
+    if (this.power(o) >= this.params.allyStrong * this.power(me)) score += 0.5;
+    return score;
   }
 
   // Endgame clock. The win bar is 80% of non-fallout land; with overtime it
@@ -860,6 +1132,7 @@ export class BotExecution extends NationExecution {
   /** "rival" = o clears the win bar inside an alliance window and before us; "lead" = we do, before everyone. */
   private endKind(me: Player, o: Player): "rival" | "lead" | null {
     if (this.params.endAlly <= 0 || o.type() === PlayerType.Bot || me.isOnSameTeam(o)) return null;
+    if (o.type() === PlayerType.Nation && this.humansOnlyOn(me)) return null; // "lead" never overrides humansOnly
     const win = this.botGame.config().allianceDuration() / 600 + this.params.endMargin;
     const mine = this.winEta(me);
     const theirs = this.winEta(o);
@@ -1261,7 +1534,7 @@ export class BotExecution extends NationExecution {
     for (const a of me.incomingAttacks()) if (a.attacker().type() !== PlayerType.Bot) hit += a.troops();
     if (hit > 0.3 * troops) return;
     const maxT = g.config().maxTroops(me);
-    const floor = Math.max(this.params.reserve, this.params.finishFloor * (self.reserveRatio ?? this.params.reserve));
+    const floor = Math.max(this.params.reserve, this.params.regenKeep, this.params.finishFloor * (self.reserveRatio ?? this.params.reserve));
     const budget = troops - floor * maxT - hit;
     if (budget <= 0) return;
     let best: { o: Player; send: number; rank: number; kind: "steal" | "finish" | "topup" | "hunt" } | null = null;
@@ -1377,6 +1650,60 @@ export class BotExecution extends NationExecution {
   // can't kill even at full troops is still eaten in chunks (the old 4x rule).
   public killsSized = 0;
   public killsHeld = 0;
+  // Tribe attacks keep regenKeep x maxTroops at home (owner report 2026-10-14:
+  // "ultra aggressive against bots, not leaving optimal troop regen rate and
+  // some reserve"). Late game the defense floor sinks to `reserve` (.13) when
+  // the neighbours are weak, and the AI sent everything above it at tribes:
+  // regen there is ~64% of its peak and nothing is left for a surprise attack.
+  // Wraps whatever sizes the send (patchTribeKill included), so a kill that
+  // no longer fits is held, not sent short.
+  // sendKeep: Hard/Impossible nations keep 0.75/0.9 x the strongest
+  // non-friendly player in nearby() (boat-only ones too) at home on every send,
+  // so a mid-size player sits at the cap until it outgrows its neighbour.
+  // Ours keeps sendKeep x instead, and also counts an ally whose alliance runs
+  // out unrenewed (owner 2026-10-14: "consider if its ally or non ally
+  // (including ally which rejects ally renew)"). Replaces neighborTroopCap
+  // (current engine) or troopSendCap (v0.34, incoming allowance kept); with
+  // capLand only bordering players count.
+  private patchSendKeep(ab: any) {
+    ab.__keep = true;
+    const name = typeof ab.neighborTroopCap === "function" ? "neighborTroopCap"
+      : typeof ab.troopSendCap === "function" ? "troopSendCap" : null;
+    if (name === null) return;
+    const orig = ab[name].bind(ab);
+    ab[name] = (ignore?: Player) => {
+      const me: Player | null = (this as any).player ?? null;
+      const cfg = this.botGame.config().gameConfig();
+      const engineKeep = cfg.difficulty === Difficulty.Impossible ? 0.9 : cfg.difficulty === Difficulty.Hard ? 0.75 : 0;
+      if (me === null || engineKeep === 0 || me.type() === PlayerType.Bot || cfg.gameMode === GameMode.Team) return orig(ignore);
+      let max = 0;
+      for (const n of me.nearby()) {
+        if (!n.isPlayer() || n === ignore || n.type() === PlayerType.Bot || this.holdsAlly(me, n)) continue;
+        if (this.params.capLand > 0 && !me.sharesBorderWith(n)) continue;
+        max = Math.max(max, n.troops());
+      }
+      let cap = max === 0 ? Infinity : Math.max(0, me.troops() - Math.ceil(max * Math.min(engineKeep, this.params.sendKeep)));
+      if (name === "troopSendCap") {
+        const hit = me.incomingAttacks().reduce((sum, x) => sum + x.troops(), 0);
+        if (hit > 0) cap = Math.max(cap, hit);
+      }
+      return cap;
+    };
+  }
+
+  private patchRegenKeep(ab: any) {
+    ab.__regen = true;
+    if (typeof ab.calculateBotAttackTroops !== "function") return;
+    const orig = ab.calculateBotAttackTroops.bind(ab);
+    ab.calculateBotAttackTroops = (target: Player, maxTroops: number) => {
+      const me: Player | null = (this as any).player ?? null;
+      if (me === null) return orig(target, maxTroops);
+      const keep = this.params.regenKeep * this.botGame.config().maxTroops(me);
+      const room = me.troops() - keep - (ab.botAttackTroopsSent ?? 0);
+      return orig(target, Math.min(maxTroops, room));
+    };
+  }
+
   private patchTribeKill(ab: any) {
     ab.__kill = true;
     if (typeof ab.calculateBotAttackTroops !== "function") return;
@@ -1511,6 +1838,7 @@ export class BotExecution extends NationExecution {
   // capLand: only land neighbours can hit us fast, so only they count.
   private patchCapLand(ab: any) {
     ab.__capLand = true;
+    if (this.params.sendKeep > 0) return; // patchSendKeep applies the border-only rule itself
     if (typeof ab.neighborTroopCap !== "function") return;
     const orig = ab.neighborTroopCap.bind(ab);
     ab.neighborTroopCap = (ignore?: Player) => {
@@ -1932,7 +2260,7 @@ export class BotExecution extends NationExecution {
       const step = Math.max(1, Math.floor(front.length / 32));
       const have = me.units(UnitType.DefensePost).filter((d) => {
         for (let i = 0; i < front.length; i += step) {
-          if (g.euclideanDistSquared(front[i], d.tile()) <= 900) return true;
+          if (g.euclideanDistSquared(front[i], d.tile()) <= g.config().defensePostRange() ** 2) return true;
         }
         return false;
       }).length;
@@ -1953,9 +2281,18 @@ export class BotExecution extends NationExecution {
       cand.push({ t, d });
     }
     cand.sort((a, b) => a.d - b.d);
+    // Owner 2026-10-14: "if 2 defence posts protection intersects it doesnt
+    // make that 10x slowth". A post's bonus is all-or-nothing per tile
+    // (hasUnitNearby within defensePostRange), so a second post only pays on
+    // front its neighbour doesn't cover: skip covered front, keep posts >= 1.5
+    // ranges apart.
+    const R = g.config().defensePostRange();
+    const posts = me.units(UnitType.DefensePost).map((u) => u.tile());
+    const near = (t: TileRef, r: number) => posts.some((p) => g.euclideanDistSquared(t, p) < r * r);
     for (const { t } of cand) {
+      if (near(t, R)) continue;
       const spot = me.canBuild(UnitType.DefensePost, t);
-      if (spot === false) continue;
+      if (spot === false || near(spot, 1.5 * R)) continue;
       g.addExecution(new ConstructionExecution(me, UnitType.DefensePost, spot));
       this.defPosts++;
       return;
@@ -2033,6 +2370,7 @@ export class BotExecution extends NationExecution {
       this.mirvR = null;
       return;
     }
+    if (this.params.mirvSave > 0) return this.mirvSaveTick(me, ticks);
     if (ticks - this.mirvAt < 600) return;
     if (g.config().isUnitDisabled(UnitType.MIRV) || me.unitCount(UnitType.MissileSilo) === 0) return;
     if (me.gold() < g.unitInfo(UnitType.MIRV).cost(g, me)) return;
@@ -2058,6 +2396,126 @@ export class BotExecution extends NationExecution {
     this.mirvR = R;
     this.mirvAt = ticks;
     this.mirvLanded = null;
+  }
+
+  // mirvSave. Owner 2026-10-14: "it never saves up his money on merv, but it
+  // msut consider its money per minute, political situations too, merv
+  // sometimes the only option agains very very strong players will probably
+  // win the game". econ never banks gold, so a MIRV never got affordable.
+  // Here: income is measured (gold rises every 10 ticks over the last
+  // minute), a threat is a non-ally far stronger than us that wins soon, and
+  // we bank only while the MIRV (plus a silo if we have none) is affordable
+  // before that win; otherwise the gold keeps building our economy.
+  public mirvSaving: Player | null = null;
+  public mirvSaveFired = 0;
+  private goldPrev = -1;
+  private goldGains: number[] = [];
+  private mirvThreat(me: Player): { T: Player; eta: number } | null {
+    const g = this.botGame;
+    const land = Math.max(1, g.numLandTiles() - g.numTilesWithFallout());
+    const mine = this.sideTiles(me);
+    let best: { T: Player; eta: number } | null = null;
+    for (const p of g.players()) {
+      if (p === me || !p.isAlive() || me.isOnSameTeam(p) || this.holdsAlly(me, p)) continue;
+      if (p.type() !== PlayerType.Human && p.type() !== PlayerType.Nation) continue;
+      const tiles = this.sideTiles(p);
+      if (tiles < this.params.mirvSave * mine || this.power(p) < 1.5 * this.power(me)) continue;
+      const eta = this.winEta(p);
+      if (eta > 20 && tiles < 0.35 * land) continue;
+      // Someone else's MIRV already flies at it: wait for that one.
+      if (g.units(UnitType.MIRV).some((u) => u.owner() !== me && u.targetTile() !== undefined && g.owner(u.targetTile()!) === p)) continue;
+      const e = Math.min(eta, 20);
+      if (best === null || e < best.eta) best = { T: p, eta: e };
+    }
+    return best;
+  }
+  private mirvSaveTick(me: Player, ticks: number) {
+    const g = this.botGame;
+    const gold = Number(me.gold());
+    if (this.goldPrev >= 0) {
+      const d = gold - this.goldPrev;
+      // A purchase hides that interval's income: reuse the last real gain.
+      this.goldGains.push(d >= 0 ? d : (this.goldGains[this.goldGains.length - 1] ?? 0));
+      if (this.goldGains.length > 60) this.goldGains.shift();
+    }
+    this.goldPrev = gold;
+    const cfg = g.config();
+    if (cfg.isUnitDisabled(UnitType.MIRV) || cfg.isUnitDisabled(UnitType.MissileSilo)) { this.mirvSaving = null; return; }
+    let pick = this.mirvThreat(me);
+    if (pick === null && this.params.mirvRich > 0) {
+      const T = this.mirvRichTarget(me, gold, ticks);
+      if (T !== null) pick = { T, eta: Infinity };
+    }
+    if (pick === null) { this.mirvSaving = null; return; }
+    const T = pick.T;
+    const mirvCost = Number(g.unitInfo(UnitType.MIRV).cost(g, me));
+    const silos = me.unitCount(UnitType.MissileSilo);
+    if (silos > 0 && gold >= mirvCost && ticks - this.mirvAt >= 600) {
+      const mb = (this as any).mirvBehavior;
+      const center = calculateTerritoryCenter(g, T);
+      if (mb && typeof mb.maybeSendMIRV === "function" && center !== null && me.canBuild(UnitType.MIRV, center) !== false) {
+        mb.maybeSendMIRV(T);
+        this.mirvsSent++;
+        this.mirvSaveFired++;
+        this.mirvR = T;
+        this.mirvAt = ticks;
+        this.mirvLanded = null;
+        this.mirvSaving = null;
+        return;
+      }
+    }
+    // mirvRich with a silo but no MIRV now (cooldown, unbuildable): don't hold the economy.
+    if (pick.eta === Infinity && silos > 0) { this.mirvSaving = null; return; }
+    const need = mirvCost + (silos === 0 ? Number(g.unitInfo(UnitType.MissileSilo).cost(g, me)) : 0) - gold;
+    const perMin = this.goldGains.length >= 30 ? (this.goldGains.reduce((a, b) => a + b, 0) * 60) / this.goldGains.length : 0;
+    const minutes = need <= 0 ? 0 : perMin > 0 ? need / perMin : Infinity;
+    this.mirvSaving = minutes <= 0.8 * pick.eta ? T : null;
+  }
+  // mirvRich: gold piling up with no runaway to save for. Graded: the more
+  // gold over the cost and the bigger the target next to us, the sooner;
+  // a target under 0.6x our land is never worth it, nor an ally/teammate.
+  private mirvRichTarget(me: Player, gold: number, ticks: number): Player | null {
+    const g = this.botGame;
+    if (ticks < 5 * 600) return null;
+    if (me.incomingAttacks().reduce((s, a) => s + a.troops(), 0) >= 0.25 * me.troops()) return null;
+    const cost = Number(g.unitInfo(UnitType.MIRV).cost(g, me)) +
+      (me.unitCount(UnitType.MissileSilo) === 0 ? Number(g.unitInfo(UnitType.MissileSilo).cost(g, me)) : 0);
+    const r = gold / Math.max(1, cost);
+    if (r < 1) return null;
+    const mine = Math.max(1, this.sideTiles(me));
+    let T: Player | null = null;
+    let best = 0;
+    for (const p of g.players()) {
+      if (p === me || !p.isAlive() || me.isOnSameTeam(p) || me.isFriendly(p) || this.holdsAlly(me, p)) continue;
+      if (p.type() !== PlayerType.Human && p.type() !== PlayerType.Nation) continue;
+      if (g.units(UnitType.MIRV).some((u) => u.targetTile() !== undefined && g.owner(u.targetTile()!) === p)) continue;
+      const t = this.sideTiles(p);
+      if (t > best) { best = t; T = p; }
+    }
+    if (T === null) return null;
+    const q = best / mine;
+    return q >= 0.6 && r * q >= this.params.mirvRich ? T : null;
+  }
+  /** While mirvSaving: no AI structures (but a missing silo), warships or nukes. */
+  private patchMirvLock(self: any) {
+    self.__mirvLock = true;
+    const sb = self.structureBehavior;
+    const origS = sb.handleStructures.bind(sb);
+    sb.handleStructures = () => {
+      if (this.mirvSaving === null) return origS();
+      if (sb.player.unitCount(UnitType.MissileSilo) === 0) return sb.maybeSpawnStructure(UnitType.MissileSilo);
+      return false;
+    };
+    const wb = self.warshipBehavior;
+    if (wb && typeof wb.maybeSpawnWarship === "function") {
+      const origW = wb.maybeSpawnWarship.bind(wb);
+      wb.maybeSpawnWarship = () => (this.mirvSaving === null ? origW() : false);
+    }
+    const nb = self.nukeBehavior;
+    if (nb && typeof nb.maybeSendNuke === "function") {
+      const origN = nb.maybeSendNuke.bind(nb);
+      nb.maybeSendNuke = (...a: any[]) => (this.mirvSaving === null ? origN(...a) : undefined);
+    }
   }
 
   // boatChain: a second front. Once a land attack on a real player runs,
@@ -2101,8 +2559,70 @@ export class BotExecution extends NationExecution {
     }
   }
 
-  /** A shore tile of T at least 15 tiles off our border that a boat of ours can reach (nearest first). */
-  private chainLanding(me: Player, T: Player): TileRef | null {
+  // boatStrike: a far target is only reachable by sea, so the land logic
+  // never sees it. The boat must beat what the target will have when it
+  // lands: its (eased) troops plus its regen during the trip.
+  public boatStrikes = 0;
+  private struckAt = new Map<Player, number>();
+  private boatStrikeTick(ticks: number) {
+    const self = this as any;
+    const me: Player | null = self.player ?? null;
+    if (me === null || !me.isAlive() || this.botGame.inSpawnPhase()) return;
+    const g = this.botGame;
+    if (me.unitCount(UnitType.TransportShip) >= g.config().boatMaxNumber()) return;
+    const mine = me.troops();
+    const incoming = me.incomingAttacks().reduce((s, a) => s + a.troops(), 0);
+    const out = me.outgoingAttacks().reduce((s, a) => s + a.troops(), 0);
+    if (incoming >= 0.3 * mine || out >= 0.3 * mine) return;
+    const maxT = g.config().maxTroops(me);
+    const floor = self.reserveRatio ?? this.params.reserve;
+    const avail = mine - Math.max(this.params.homeKeep, this.params.minKeep, floor) * maxT - incoming;
+    if (avail < 1) return;
+    const border = [...me.borderTiles()];
+    if (border.length === 0) return;
+    const bs = Math.max(1, Math.floor(border.length / 64));
+    const cand: { o: Player; need0: number; tk: number; rate: number; room: number; mult: number }[] = [];
+    for (const o of g.players()) {
+      if (o === me || !o.isAlive() || o.type() === PlayerType.Bot || me.isFriendly(o)) continue;
+      if (me.sharesBorderWith(o) || !me.canAttackPlayer(o)) continue;
+      if (ticks - (this.struckAt.get(o) ?? -1e9) < 600) continue;
+      const traitor = o.isTraitor();
+      // r054: striking any far player cost wins (6 -> 2 of 16, deaths 4 -> 9);
+      // 1 = only traitors and disconnected players, 2 = anyone.
+      if (this.params.boatStrike < 2 && !traitor && !o.isDisconnected()) continue;
+      // A traitor's land costs the attacker half (0.6: a margin) for 30 s.
+      const tk = traitor ? 0.6 : 1;
+      const eff = this.targetEff(me, o);
+      if (1.3 * tk * eff > avail) continue;
+      const low = o.troops() < 0.3 * g.config().maxTroops(o);
+      // Its regen during the trip, capped at its max troops.
+      cand.push({ o, need0: eff, tk, rate: g.config().troopIncreaseRate(o), room: Math.max(0, g.config().maxTroops(o) - o.troops()), mult: (traitor ? 1.5 : 1) * (low ? 1.3 : 1) });
+    }
+    let best: { o: Player; dst: TileRef; need: number; score: number } | null = null;
+    // Cheapest first; the landing search is costly, so only the best 4.
+    cand.sort((a, b) => b.o.numTilesOwned() / Math.max(1, b.tk * b.need0) * b.mult - a.o.numTilesOwned() / Math.max(1, a.tk * a.need0) * a.mult);
+    for (const c of cand.slice(0, 4)) {
+      const dst = this.chainLanding(me, c.o, 0);
+      if (dst === null) continue;
+      let d2 = Infinity;
+      for (let j = 0; j < border.length; j += bs) d2 = Math.min(d2, g.euclideanDistSquared(border[j], dst));
+      const travel = 1.2 * Math.sqrt(d2);
+      // Regen slows as it fills toward its max: step it in 1 s steps.
+      let grow = 0;
+      for (let t = 0; t < travel + 150 && grow < c.room; t += 10) grow += 10 * c.rate * (1 - grow / c.room);
+      const need = 1.3 * c.tk * (c.need0 + Math.min(c.room, grow));
+      if (need > avail) continue;
+      const score = (c.o.numTilesOwned() / need) * c.mult / (1 + travel / 200);
+      if (best === null || score > best.score) best = { o: c.o, dst, need, score };
+    }
+    if (best === null) return;
+    this.struckAt.set(best.o, ticks);
+    g.addExecution(new TransportShipExecution(me, best.dst, Math.max(1, Math.floor(best.need))));
+    this.boatStrikes++;
+  }
+
+  /** A shore tile of T at least 15 tiles (minD2 = 225) off our border that a boat of ours can reach (nearest first). */
+  private chainLanding(me: Player, T: Player, minD2 = 225): TileRef | null {
     const g = this.botGame;
     const border = [...me.borderTiles()];
     if (border.length === 0) return null;
@@ -2115,7 +2635,7 @@ export class BotExecution extends NationExecution {
       if (!g.isShore(t)) continue;
       let d = Infinity;
       for (let j = 0; j < border.length; j += bs) d = Math.min(d, g.euclideanDistSquared(border[j], t));
-      if (d >= 225) cand.push({ t, d });
+      if (d >= minD2) cand.push({ t, d });
     }
     cand.sort((a, b) => a.d - b.d);
     for (const { t } of cand.slice(0, 8)) {
@@ -2433,11 +2953,14 @@ export class BotExecution extends NationExecution {
       // tile without an attack, so a yes is a free port and no betrayal.
       const ally = this.params.snipeAlly > 0 && o.type() !== PlayerType.Bot &&
         !me.sharesBorderWith(o) && me.canSendAllianceRequest(o) &&
+        (this.params.farAlly <= 0 || this.allyKind(me, o) !== "food") &&
         (this.params.baitHuman <= 0 || o.type() !== PlayerType.Human || o.troops() <= this.params.baitHuman * troops);
       if (!losing && !ally) continue;
       const dens = o.troops() / Math.max(1, o.numTilesOwned());
+      // Spreading send: ranks targets (a thin owner retakes slower) and sizes
+      // a landing that misses the structure tile.
       const send = Math.max(1000, this.params.snipeK * dens * 40);
-      if (send > this.params.snipeMax * troops) continue;
+      if (send > this.params.snipeMax * troops && this.params.snipeSmall <= 0) continue;
       for (const u of o.units(types)) {
         const t = u.tile();
         if (!map.isShore(t) && u.type() !== UnitType.Port) continue;
@@ -2458,6 +2981,12 @@ export class BotExecution extends NationExecution {
     if (dst === null || launch === false) { this.sniped.set(best.id, ticks); return; }
     if (map.euclideanDistSquared(launch, dst) > r2) { this.sniped.set(best.id, ticks); return; }
     this.sniped.set(best.id, ticks);
+    // Owner 2026-10-14: "when port sniping always make bot send little, maybe
+    // 1% troop boats". A landing on the structure tile takes it on arrival.
+    if (this.params.snipeSmall > 0) {
+      if (dst === best.tile) best.send = Math.max(1, Math.floor(this.params.snipeSmall * troops));
+      else if (best.send > this.params.snipeMax * troops) return;
+    }
     // Close landing next to an enemy warship: several boats at once, so it
     // can't sink them all in time. Unguarded, one boat does it.
     let boats = 1;
@@ -2620,12 +3149,18 @@ export class BotExecution extends NationExecution {
     if (this.params.openCap > 0 && floor > this.params.openCap && me.nearby().some((n) => !n.isPlayer())) {
       floor = this.params.openCap;
     }
+    // Owner 2026-10-14: "waits exactly 100 percent to send boats ... makes bot
+    // sit for minutes", "0.9 is high it can be 0.7".
+    if (this.params.trigMax > 0) floor = Math.min(floor, this.params.trigMax - 0.08);
     self.reserveRatio = Math.max(this.params.reserve, floor);
     self.expandRatio = Math.max(this.params.expand, floor);
     self.triggerRatio = Math.max(this.params.trigger, Math.min(0.97, floor + 0.08));
+    if (this.params.trigMax > 0) self.triggerRatio = Math.min(self.triggerRatio, this.params.trigMax);
     const ab = self.attackBehavior;
     if (ab && this.params.crownGate > 0 && !ab.__crown) this.patchCrown(ab);
     if (ab && this.params.tribeKill > 0 && !ab.__kill) this.patchTribeKill(ab);
+    if (ab && this.params.regenKeep > 0 && !ab.__regen) this.patchRegenKeep(ab);
+    if (ab && this.params.sendKeep > 0 && !ab.__keep) this.patchSendKeep(ab);
     if (ab && this.params.pvpRatio > 0 && !ab.__pvp) this.patchPvp(ab);
     if (ab && this.params.boatPick > 0 && !ab.__boat) this.patchBoatPick(ab);
     if (ab && this.params.capLand > 0 && !ab.__capLand) this.patchCapLand(ab);
@@ -3033,6 +3568,7 @@ export class BotExecution extends NationExecution {
         if (d < dMin) dMin = d;
       }
       let landN = 0;
+      let water = 0; // best ocean/lake sample, faded by ring radius
       const tribes = new Set<string>();
       const N = 48;
       for (let k = 0; k < N; k++) {
@@ -3041,7 +3577,10 @@ export class BotExecution extends NationExecution {
         const y = Math.round(ty + RING[k][1] * rad);
         if (x < 0 || y < 0 || x >= w || y >= h) continue;
         const s = map.ref(x, y);
-        if (!map.isLand(s)) continue;
+        if (!map.isLand(s)) {
+          water = Math.max(water, (map.isOcean(s) ? 1 : 0.5) * (1 - (rad - 8) / 40));
+          continue;
+        }
         landN++;
         const o = g.owner(s);
         if (o.isPlayer() && (o as Player).type() === PlayerType.Bot) {
@@ -3051,7 +3590,8 @@ export class BotExecution extends NationExecution {
       const score =
         this.params.wDist * (dMin / maxD) +
         this.params.wLand * (landN / N) +
-        this.params.wTribe * Math.min(tribes.size, 6) / 6;
+        this.params.wTribe * Math.min(tribes.size, 6) / 6 +
+        this.params.wWater * water;
       if (score > bestScore) {
         bestScore = score;
         best = t;

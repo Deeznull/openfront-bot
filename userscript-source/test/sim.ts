@@ -104,6 +104,11 @@ async function main() {
   let diverged = 0;
   let lastFeed = "none";
   let preOwnedMin = 1;
+  let lowMin = 1;
+  let lastRatio = 1;
+  let lowAt = -1;
+  let lowTicks = 0;
+  let lowLogged = 0;
 
   const shadowHashes = new Map<number, number>();
   const counts: Record<string, number> = {};
@@ -250,6 +255,32 @@ async function main() {
       while (ready < 2) await new Promise((r) => setTimeout(r, 10));
       console.log(`resynced at tick ${real.game.ticks()}`);
     }
+    if (n % 10 === 0 && !real.game.inSpawnPhase()) {
+      // Troop floor check (minKeep): how low the bot's own troops go.
+      const me = real.game.playerByClientID(CLIENT);
+      if (me?.isAlive()) {
+        const ratio = me.troops() / real.game.config().maxTroops(me);
+        const prevRatio = lastRatio;
+        lastRatio = ratio;
+        if (ratio < lowMin) {
+          lowMin = ratio;
+          lowAt = n;
+        }
+        if (ratio < 0.2) {
+          lowTicks += 10;
+          if (lowLogged < 8 && ratio < 0.15) {
+            lowLogged++;
+            const inc = me.incomingAttacks().reduce((a: number, x: any) => a + x.troops(), 0);
+            const out = me.outgoingAttacks().reduce((a: number, x: any) => a + x.troops(), 0);
+            console.log(
+              `low troops tick ${n}: ${(ratio * 100).toFixed(1)}% of max (10 ticks ago ${(prevRatio * 100).toFixed(1)}%), ` +
+                `troops ${Math.round(me.troops())} max ${Math.round(real.game.config().maxTroops(me))} tiles ${me.numTilesOwned()} ` +
+                `incoming ${Math.round(inc)} outgoing ${Math.round(out)} gold ${me.gold()}`,
+            );
+          }
+        }
+      }
+    }
     if (n % 600 === 0) {
       const me = real.game.playerByClientID(CLIENT)!;
       const sy = syncs[syncs.length - 1];
@@ -266,6 +297,7 @@ async function main() {
   const me = real.game.playerByClientID(CLIENT)!;
   const secs = ((performance.now() - t0) / 1000).toFixed(0);
   console.log(`intents sent: ${JSON.stringify(counts)}`);
+  console.log(`troop floor: min ${(lowMin * 100).toFixed(1)}% of max at tick ${lowAt}, ${lowTicks} ticks below 20%`);
   if (process.argv.includes("--doomsday")) {
     const doomed = real.game.players().filter((p: any) => p.type() !== "BOT" && p.inDoomsdayClock?.()).length;
     console.log(`DOOMSDAY ours flagged ${me.inDoomsdayClock?.() ?? "n/a"}, players flagged ${doomed}, our land share ${((me.numTilesOwned() / real.game.numLandTiles()) * 100).toFixed(2)}%`);

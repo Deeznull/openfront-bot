@@ -31,12 +31,15 @@ interface Settings {
   emojis: boolean;
   team: boolean;
   share: boolean;
+  turbo: boolean;
+  farm: boolean;
+  farmGames: number;
   x: number;
   y: number;
 }
 const SETTINGS_KEY = "ofbot.settings.v1";
 // x < 0: default spot at the top right, under the game's timer bar.
-const settings: Settings = { autoStart: false, emojis: false, team: true, share: true, x: -1, y: 130 };
+const settings: Settings = { autoStart: false, emojis: false, team: true, share: true, turbo: true, farm: false, farmGames: 0, x: -1, y: 130 };
 try {
   Object.assign(settings, JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? "{}"));
 } catch {
@@ -101,6 +104,52 @@ function note(msg: string) {
   render();
 }
 
+// ------------------------------------------------------------- solo turbo
+// Solo games (and replays) run on a local server that checks every 5 ms
+// whether the engine finished the last turn and, at Max speed, hands out the
+// next one. Browsers stretch that timer to >= 4 ms, and to once a second in a
+// background tab. Turbo runs the same check right after each engine message
+// (a MessageChannel task, which background tabs don't throttle), so at Max
+// the next turn starts as soon as the last one is done. The check itself
+// still decides: at the other speeds nothing changes. Multiplayer servers
+// pace turns themselves, so it has no effect there.
+let turnPoll: (() => void) | null = null;
+let turnPollId: unknown = null;
+let turnsPosted = 0;
+let kickAt = 0;
+const realSetInterval = W.setInterval.bind(W);
+const realClearInterval = W.clearInterval.bind(W);
+W.setInterval = (fn: any, ms?: number, ...args: any[]) => {
+  const id = realSetInterval(fn, ms, ...args);
+  if (ms === 5 && typeof fn === "function" && /replaySpeedMultiplier|turnIntervalMs/.test(String(fn))) {
+    turnPoll = fn;
+    turnPollId = id;
+  }
+  return id;
+};
+W.clearInterval = (id?: any) => {
+  if (id !== undefined && id === turnPollId) turnPoll = turnPollId = null;
+  return realClearInterval(id);
+};
+const kick = new MessageChannel();
+kick.port1.onmessage = () => {
+  if (!turnPoll || !(settings.turbo || settings.farm)) return;
+  const before = turnsPosted;
+  try {
+    turnPoll();
+  } catch {
+    turnPoll = null; // the game changed: leave its own timer alone
+    return;
+  }
+  // The check wants a new millisecond; retry briefly instead of waiting 4 ms.
+  if (turnsPosted === before && Date.now() - kickAt < 2) kick.port2.postMessage(0);
+};
+function kickTurn() {
+  if (!turnPoll || !(settings.turbo || settings.farm)) return;
+  kickAt = Date.now();
+  kick.port2.postMessage(0);
+}
+
 // ------------------------------------------------------------ worker hook
 
 class HookedWorker extends RealWorker {
@@ -121,6 +170,7 @@ function hook(w: Worker) {
   (w as any).postMessage = (msg: any, transfer?: any) => {
     try {
       if (msg && typeof msg === "object") {
+        if (msg.type === "turn") turnsPosted++;
         if (msg.type === "init" && msg.gameStartInfo) {
           // Clone before the real post detaches the transferred map buffers.
           onInit(w, realPost, structuredClone({ ...msg, id: undefined }));
@@ -142,6 +192,7 @@ function hook(w: Worker) {
   };
   w.addEventListener("message", (e: MessageEvent) => {
     if (ctx?.realWorker === w) onRealMessage(e.data);
+    kickTurn();
   });
 }
 
@@ -198,7 +249,7 @@ function onInit(w: Worker, realPost: GameCtx["realPost"], init: any) {
     note(reason);
     return;
   }
-  if (settings.autoStart) botOn = true;
+  if (settings.autoStart || (settings.farm && gameType === "Singleplayer")) botOn = true;
   startShadow(ctx, false);
   note(`${gameType} game detected — starting shadow engine`);
 }
@@ -574,6 +625,115 @@ function setBot(on: boolean) {
 
 // ----------------------------------------------------------------------- UI
 
+// ------------------------------------------------------------- turbo farm
+// Farm: on the homepage start an Easy solo game (the player's other solo
+// settings stay), let the bot play it at Max speed with turbo, and after the
+// game ends go back home and start the next one. Unchecking stops the loop.
+const FARM_WAIT_MS = 10_000; // after the end: let the game record upload
+const FARM_MAX_MS = 60 * 60_000; // a game that never ends is left after this
+let farmGameAt = 0;
+let farmEndAt = 0;
+let farmDeadTitle: string | null = null;
+let farmDeadAt = 0;
+let farmStartAt = 0;
+
+function farmOnHome(): boolean {
+  const p = location.pathname;
+  return !ctx && (p === "/" || p === "" || p === "/index.html") && !/join|replay/i.test(location.hash + location.search);
+}
+
+async function farmStart() {
+  const el = document.querySelector("single-player-modal") as any;
+  if (!el || typeof el.startGame !== "function") return;
+  note("Farm: starting an Easy solo game…");
+  try {
+    el.resetOptions?.();
+    await el.loadNationCount?.();
+    if (typeof el.handleDifficultySelection === "function") el.handleDifficultySelection("Easy");
+    else el.selectedDifficulty = "Easy";
+    await el.startGame();
+  } catch (e) {
+    note(`Farm: couldn't start a solo game (${String(e)})`);
+  }
+}
+
+/** The game's "speed up" key, as the player has bound it (default "."). */
+function speedUpKey(): { code: string; shift: boolean } | null {
+  let v = "Period";
+  try {
+    const b = JSON.parse(localStorage.getItem("settings.keybinds") ?? "{}")?.gameSpeedUp;
+    const s = typeof b === "string" ? b : typeof b?.value === "string" ? b.value : null;
+    if (s === "Null") return null;
+    if (s) v = s;
+  } catch {
+    /* defaults */
+  }
+  const parts = v.split("+");
+  return { code: parts[parts.length - 1], shift: parts.slice(0, -1).some((x) => /shift/i.test(x)) };
+}
+
+function farmSpeedUp() {
+  const k = speedUpKey();
+  if (!k) return;
+  // The game reacts on keyup; Max is the top speed, so extra presses do nothing.
+  dispatchEvent(new KeyboardEvent("keyup", { code: k.code, shiftKey: k.shift, bubbles: true }));
+}
+
+function farmLeave() {
+  settings.farmGames++;
+  saveSettings();
+  const wm = document.querySelector("win-modal") as any;
+  note(`Farm: game ${settings.farmGames} done — next one`);
+  if (typeof wm?._handleExit === "function") wm._handleExit();
+  else location.assign(`${location.origin}/`);
+}
+
+function farmTick() {
+  if (!settings.farm) {
+    farmStartAt = 0;
+    return;
+  }
+  const now = Date.now();
+  if (farmOnHome()) {
+    // A few seconds on the homepage first: time to uncheck Farm, and for the
+    // page to finish loading its components.
+    if (!farmStartAt) farmStartAt = now + 5000;
+    if (now >= farmStartAt) {
+      farmStartAt = now + 20_000; // retry if this start doesn't lead to a game
+      void farmStart();
+    }
+    return;
+  }
+  farmStartAt = 0;
+  const c = ctx;
+  if (!c) farmGameAt = 0;
+  if (!c || !c.allowed || c.gameType !== "Singleplayer") return;
+  if (farmGameAt === 0) farmGameAt = now;
+  if (c.shadowReady) farmSpeedUp();
+  const wm = document.querySelector("win-modal") as any;
+  if (farmEndAt === 0) {
+    if (wm?.isVisible) {
+      const alive = !!c.stats?.alive;
+      const title = String(wm._title ?? "");
+      if (alive) farmEndAt = now + FARM_WAIT_MS;
+      // Died: the modal comes up again with a new title when the game ends.
+      // At Max speed that's usually soon; don't wait more than 5 minutes.
+      else if (farmDeadTitle === null) {
+        farmDeadTitle = title;
+        farmDeadAt = now;
+      } else if (title !== farmDeadTitle) farmEndAt = now + FARM_WAIT_MS;
+    }
+    if (farmDeadTitle !== null && now - farmDeadAt > 5 * 60_000) farmEndAt = now;
+    if (now - farmGameAt > FARM_MAX_MS) farmEndAt = now;
+  } else if (now >= farmEndAt) {
+    farmEndAt = farmGameAt = 0;
+    farmDeadTitle = null;
+    farmLeave();
+  }
+}
+setInterval(farmTick, 1000);
+
+
 let ui: {
   host: HTMLElement;
   status: HTMLElement;
@@ -584,6 +744,8 @@ let ui: {
   emo: HTMLInputElement;
   team: HTMLInputElement;
   share: HTMLInputElement;
+  turbo: HTMLInputElement;
+  farm: HTMLInputElement;
 } | null = null;
 
 function buildUI() {
@@ -617,6 +779,8 @@ function buildUI() {
     <label><input type="checkbox" class="emo"> Bot may send emojis</label>
     <label><input type="checkbox" class="team"> Team up with other script bots</label>
     <label><input type="checkbox" class="share"> Send/receive troops &amp; gold with them</label>
+    <label title="Solo games at Max speed: start the next turn as soon as the last one is done"><input type="checkbox" class="turbo"> Turbo solo Max speed</label>
+    <label title="Starts Easy solo games one after another, played by the bot at Max speed with turbo. Uncheck to stop."><input type="checkbox" class="farm"> Farm: Easy solo games on repeat</label>
     <div class="m"></div>
   </div>
 </div>`;
@@ -633,6 +797,8 @@ function buildUI() {
     emo: q(".emo"),
     team: q(".team"),
     share: q(".share"),
+    turbo: q(".turbo"),
+    farm: q(".farm"),
   };
   ui.team.checked = settings.team;
   ui.share.checked = settings.share;
@@ -645,6 +811,17 @@ function buildUI() {
     settings.share = ui!.share.checked;
     saveSettings();
     pushEnable();
+  };
+  ui.turbo.checked = settings.turbo;
+  ui.turbo.onchange = () => {
+    settings.turbo = ui!.turbo.checked;
+    saveSettings();
+  };
+  ui.farm.checked = settings.farm;
+  ui.farm.onchange = () => {
+    settings.farm = ui!.farm.checked;
+    saveSettings();
+    note(settings.farm ? "Farm on: Easy solo games on repeat" : "Farm off");
   };
   ui.auto.checked = settings.autoStart;
   ui.emo.checked = settings.emojis;
@@ -723,7 +900,7 @@ function render() {
   ui.btn.disabled = blocked;
   ui.btn.textContent = blocked ? "Unavailable here" : botOn ? "Stop bot" : c ? "Start bot" : "Start bot (next game)";
   ui.btn.className = botOn && !blocked ? "on" : "";
-  ui.msg.textContent = lastMsg;
+  ui.msg.textContent = (settings.farm ? `Farm: ${settings.farmGames} games · ` : "") + lastMsg;
 }
 
 function fmt(n: number): string {
