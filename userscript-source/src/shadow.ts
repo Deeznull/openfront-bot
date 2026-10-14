@@ -145,6 +145,11 @@ export function createShadow(post: Post, onPage = false) {
     earlyCity: 2,
     earlyCityMin: 3,
     traitorK: 1,
+    // 0.5.1 live-play fixes (owner reports 2026-10-14; quick sim on tf0-15)
+    tribeFinish: 1, // finish tribes we hit, steal ones others hit (allies too), hunt early
+    finishFloor: 0.6,
+    baitHuman: 1, // ally-bait boats only into humans no stronger than us
+    structTarget: 0.5, // prefer neighbours whose cities/ports/factories our attack can reach
     // play-only (no sim signal; kept per the transfer rule)
     renewLead: 26,
     humanAccept: 1,

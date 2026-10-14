@@ -2,6 +2,8 @@ import {
   Nation,
   PlayerInfo,
   PlayerType,
+  TerrainType,
+  UnitType,
 } from "@openfront/engine-api/game/GameTypes";
 import { AttackExecution } from "@openfront/engine/execution/AttackExecution";
 import {
@@ -315,3 +317,145 @@ describe("BotExecution homeK", () => {
   });
 });
 
+
+// tribeFinish (user live report 2026-10-14): finish tribes we attacked, steal
+// kills from anyone hitting a bordering tribe (allies too), hunt early.
+async function finishSetup(params: Partial<typeof DEFAULT_PARAMS> = {}) {
+  const me = new PlayerInfo("me", PlayerType.Human, null, "me");
+  const tribe = new PlayerInfo("tribe", PlayerType.Bot, null, "tribe");
+  const friend = new PlayerInfo("friend", PlayerType.Human, null, "friend");
+  const game = await setup("big_plains", {}, [me, tribe, friend], undefined, UseRealAttackLogic);
+  const mp = game.player("me");
+  const tp = game.player("tribe");
+  const fp = game.player("friend");
+  conquerRect(game, tp, 0, 0, 60, 60);
+  conquerRect(game, mp, 60, 0, 60, 120);
+  conquerRect(game, fp, 0, 60, 60, 60);
+  tp.setTroops(40_000);
+  const bot = new BotExecution("fin", new Nation(undefined, me), { ...DEFAULT_PARAMS, tribeFinish: 1, ...params });
+  bot.init(game);
+  const b = bot as any;
+  b.player = mp;
+  b.reserveRatio = 0.8; // early defense floor (strong neighbours)
+  return { game, mp, tp, fp, b };
+}
+const runOut = (game: Game, mp: Player) => {
+  for (let i = 0; i < 3000 && mp.outgoingAttacks().length > 0; i++) game.executeNextTick();
+};
+
+describe("BotExecution tribeFinish", () => {
+  test("a half-sized attack on a tribe is topped up and the tribe dies", async () => {
+    const { game, mp, tp, b } = await finishSetup();
+    const need = b.killSend(tp);
+    const maxT = game.config().maxTroops(mp);
+    mp.setTroops(Math.min(maxT, need * 0.4 + 0.48 * maxT + need));
+    game.addExecution(new AttackExecution(need * 0.4, mp, tp.id()));
+    game.executeNextTick();
+    game.executeNextTick();
+    b.tribeFinish(game.ticks());
+    expect(b.fin.topup).toBe(1);
+    runOut(game, mp);
+    expect(tp.isAlive()).toBe(false);
+  });
+
+  test("an ally hitting a bordering tribe makes us steal it; the hunt waits for the full kill", async () => {
+    const { game, mp, tp, fp, b } = await finishSetup();
+    mp.createAllianceRequest(fp)?.accept();
+    expect(mp.isFriendly(fp)).toBe(true);
+    const need = b.killSend(tp);
+    const maxT = game.config().maxTroops(mp);
+    // Budget (troops - 0.48 maxT) covers 70% of the kill: a hunt waits, a steal goes.
+    mp.setTroops(0.48 * maxT + 0.7 * need);
+    b.tribeFinish(game.ticks());
+    expect(b.fin.hunt + b.fin.steal).toBe(0);
+    fp.setTroops(1_000_000);
+    game.addExecution(new AttackExecution(20_000, fp, tp.id()));
+    game.executeNextTick();
+    b.tribeFinish(game.ticks());
+    expect(b.fin.steal).toBe(1);
+    game.executeNextTick();
+    expect(mp.outgoingAttacks().some((a) => a.target() === tp)).toBe(true);
+  });
+
+  test("hunts a bordering tribe once the kill fits above the floor, not while hit hard", async () => {
+    const { game, mp, tp, fp, b } = await finishSetup();
+    const need = b.killSend(tp);
+    const maxT = game.config().maxTroops(mp);
+    mp.setTroops(0.48 * maxT + need + 1000);
+    fp.setTroops(1_000_000);
+    game.addExecution(new AttackExecution(0.4 * mp.troops(), fp, mp.id()));
+    game.executeNextTick();
+    b.tribeFinish(game.ticks());
+    expect(b.fin.hunt).toBe(0);
+    for (const a of mp.incomingAttacks()) a.delete();
+    mp.setTroops(0.48 * maxT + need + 1000);
+    b.tribeFinish(game.ticks() + 100);
+    expect(b.fin.hunt).toBe(1);
+    game.executeNextTick();
+    runOut(game, mp);
+    expect(tp.isAlive()).toBe(false);
+  });
+});
+
+// structTarget (user live report 2026-10-14): a neighbour with cities our
+// attack can reach beats an equally beatable empty one. v2: no fixed range;
+// a structure fades with the attack cost to reach it (distance, terrain,
+// defense posts) against how far half our army can push.
+async function structSetup() {
+  const me = new PlayerInfo("me", PlayerType.Human, null, "me");
+  const a = new PlayerInfo("empty", PlayerType.Human, null, "empty");
+  const c = new PlayerInfo("rich", PlayerType.Human, null, "rich");
+  const game = await setup("big_plains", {}, [me, a, c], undefined, UseRealAttackLogic);
+  const mp = game.player("me");
+  const ap = game.player("empty");
+  const cp = game.player("rich");
+  conquerRect(game, ap, 0, 0, 60, 100);
+  conquerRect(game, mp, 60, 0, 60, 200);
+  conquerRect(game, cp, 0, 100, 60, 100);
+  mp.setTroops(300_000);
+  ap.setTroops(50_000);
+  cp.setTroops(55_000);
+  const bot = new BotExecution("st", new Nation(undefined, me), { ...DEFAULT_PARAMS, pvpRatio: 1.6, structTarget: 0.5 });
+  bot.init(game);
+  const b = bot as any;
+  b.player = mp;
+  const val = () => {
+    b.structCache.clear();
+    return b.structEval(mp, cp) as { value: number; front: number };
+  };
+  return { game, mp, ap, cp, b, val };
+}
+
+describe("BotExecution structTarget", () => {
+  test("redirects to the neighbour whose structures our attack can reach", async () => {
+    const { game, ap, cp, mp, b, val } = await structSetup();
+    expect(b.structPick(mp, ap)).toBe(ap); // no structures anywhere
+    cp.buildUnit(UnitType.City, game.ref(55, 150), {}); // 5 tiles past our border
+    expect(val().value).toBeGreaterThan(0.95);
+    expect(b.structPick(mp, ap)).toBe(cp);
+    cp.setTroops(200_000); // fails the 1.6x ratio gate: keep the original
+    b.structCache.clear();
+    expect(b.structPick(mp, ap)).toBe(ap);
+  });
+
+  test("a structure fades with distance, our strength, terrain and defense posts (no fixed cutoff)", async () => {
+    const { game, mp, cp, val } = await structSetup();
+    cp.buildUnit(UnitType.City, game.ref(5, 150), {}); // 55 tiles deep
+    const far = val().value;
+    expect(far).toBeGreaterThan(0.2); // the old 40-tile cutoff gave 0
+    expect(far).toBeLessThan(0.9);
+    mp.setTroops(60_000); // a weak army cannot push 55 tiles
+    expect(val().value).toBeLessThan(0.05);
+    mp.setTroops(300_000);
+    const orig = game.terrainType.bind(game);
+    (game as any).terrainType = (t: number) => (game.x(t) < 55 ? TerrainType.Mountain : orig(t));
+    const mountain = val().value;
+    expect(mountain).toBeLessThan(far);
+    (game as any).terrainType = orig;
+    expect(val().front).toBe(1);
+    cp.buildUnit(UnitType.DefensePost, game.ref(40, 150), {}); // covers the line and the front
+    const posted = val();
+    expect(posted.value).toBeLessThan(mountain);
+    expect(posted.front).toBeGreaterThan(1.5); // front tiles within 30 of the post cost x5
+  });
+});

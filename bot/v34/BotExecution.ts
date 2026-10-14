@@ -128,6 +128,10 @@ export interface BotParams {
   tribeKill: number; // 1 = size every tribe attack to kill it outright (engine attack cost over its tiles), never a stalling half-attack; 2 = kill-size it when that fits, else the usual chunk attack
   killMargin: number; // extra troops on a kill-sized attack (tribe regen during the attack, estimate error)
   tribeHunt: number; // 1 = kill any bordering tribe as soon as the kill fits above the expand floor (no waiting for the trigger ratio)
+  tribeFinish: number; // 1 = finish every tribe we attacked (top up the running attack to the kill), kill-steal any bordering tribe someone else attacks (allies too), hunt a bordering tribe once its kill fits; replaces tribeSteal
+  finishFloor: number; // tribeFinish keeps max(reserve, finishFloor x defense floor) x maxTroops at home
+  structTarget: number; // >0 = Nation-AI player targets are compared by troops x front cover / (1 + structTarget x value of their cities/ports/factories, faded by attack reach through terrain and defense posts); the cheapest beatable one is hit (structures flip to us on capture)
+  baitHuman: number; // >0 = snipeAlly ally-bait boats go to a human only if its troops <= baitHuman x ours (a refused bait boat dies and makes an enemy)
   pvpRatio: number; // Nation-AI attacks on real players need our troops >= pvpRatio x theirs, less when others already hit them (0 = off)
   homeK: number; // >0 = own strikes/pushes/dumps/counter top-ups keep home troops >= homeK x strongest OTHER non-friendly neighbour (raid-then-dogpile guard)
   pvpNat: number; // >0 = pvpRatio for Nations (Medium-AI food when boxed in; KNOWLEDGE OP-032/S05 hit at >=1.22x)
@@ -269,6 +273,10 @@ export const DEFAULT_PARAMS: BotParams = {
   tribeKill: 0,
   killMargin: 0.15,
   tribeHunt: 0,
+  tribeFinish: 0,
+  finishFloor: 0.6,
+  baitHuman: 0,
+  structTarget: 0,
   pvpRatio: 0,
   homeK: 0,
   pvpNat: 0,
@@ -436,7 +444,8 @@ export class BotExecution extends NationExecution {
         ticks % Math.max(5, Math.round(this.params.rate)) === 0) this.grab(ticks);
     if (this.params.snipe > 0 && ticks % Math.max(5, Math.round(this.params.snipeEvery)) === 0) this.snipe(ticks);
     if (this.params.dump > 0 && ticks % Math.max(5, Math.round(this.params.rate)) === 0) this.dumpSurplus();
-    if (this.params.tribeSteal > 0 && ticks % 10 === 0) this.tribeSteal(ticks);
+    if (this.params.tribeFinish > 0) { if (ticks % 10 === 0) this.tribeFinish(ticks); }
+    else if (this.params.tribeSteal > 0 && ticks % 10 === 0) this.tribeSteal(ticks);
     if (this.params.kin > 0) this.kinHandshake();
     if (this.params.clanKin > 0 && ticks % 50 === 7) this.clanKin();
     if (this.params.emojiMode > 0 && ticks % 10 === 5) this.allyEmojis(ticks);
@@ -1215,6 +1224,84 @@ export class BotExecution extends NationExecution {
       g.addExecution(new AttackExecution(send, me, o.id()));
       budget -= send;
     }
+  }
+
+  // Gray bots (tribes), user live report 2026-10-14: "attacked gray bots and
+  // didnt finished them", "didnt tried to steal gray bot kills", "waits like 80
+  // percent to attack its first gray bot". A kill hands us the tribe's land and
+  // gold stash (GameImpl.conquerPlayer; tribes earn 50 gold/tick); a half-eaten
+  // tribe gives neither. The Nation AI only attacks at the trigger ratio
+  // (defense floor + .08, so .8-.9 early) and sends 4x the tribe's troops,
+  // whatever its size. Every 10 ticks, at most one send, in this order:
+  //  1. steal: a bordering tribe someone else attacks (allies too);
+  //  2. finish: a tribe we attacked that still lives (a top-up merges into the
+  //     running land attack, AttackExecution.init);
+  //  3. hunt: the cheapest bordering tribe whose whole kill fits.
+  // Graded: the budget keeps finishFloor x the defense floor (strongest
+  // neighbour vs us) at home and nothing goes out while players hit us hard.
+  private finTribes = new Map<string, number>(); // tribe id -> last tick we attacked it
+  private finSent = new Map<string, number>();
+  public fin = { steal: 0, finish: 0, topup: 0, hunt: 0, first: -1 };
+  private tribeFinish(ticks: number) {
+    const self = this as any;
+    const me: Player | null = self.player ?? null;
+    const g = this.botGame;
+    if (me === null || !me.isAlive() || g.inSpawnPhase()) return;
+    const cur = new Map<string, number>();
+    for (const a of me.outgoingAttacks()) {
+      const t = a.target();
+      if (!t.isPlayer() || (t as Player).type() !== PlayerType.Bot) continue;
+      const id = (t as Player).id();
+      this.finTribes.set(id, ticks);
+      cur.set(id, (cur.get(id) ?? 0) + a.troops());
+      if (this.fin.first < 0) this.fin.first = ticks;
+    }
+    const troops = me.troops();
+    let hit = 0;
+    for (const a of me.incomingAttacks()) if (a.attacker().type() !== PlayerType.Bot) hit += a.troops();
+    if (hit > 0.3 * troops) return;
+    const maxT = g.config().maxTroops(me);
+    const floor = Math.max(this.params.reserve, this.params.finishFloor * (self.reserveRatio ?? this.params.reserve));
+    const budget = troops - floor * maxT - hit;
+    if (budget <= 0) return;
+    let best: { o: Player; send: number; rank: number; kind: "steal" | "finish" | "topup" | "hunt" } | null = null;
+    for (const n of me.nearby()) {
+      if (!n.isPlayer()) continue;
+      const o = n as Player;
+      if (o.type() !== PlayerType.Bot || !o.isAlive() || me.isFriendly(o) || !me.sharesBorderWith(o)) continue;
+      if (ticks - (this.finSent.get(o.id()) ?? -1e9) < 20) continue;
+      const need = this.killSend(o);
+      if (need > 0.9 * maxT) continue; // too big to kill at all: the usual chunk attacks eat it
+      const running = cur.get(o.id()) ?? 0;
+      const others = o.incomingAttacks().some((a) => a.attacker() !== me);
+      const ours = this.finTribes.has(o.id());
+      let send = 0;
+      let kind: "steal" | "finish" | "topup" | "hunt" = "hunt";
+      if (running > 0) {
+        // Running attack short of the kill: add the gap (others' attacks thin it too).
+        const gap = need - running;
+        if (running >= 0.8 * need || gap < Math.max(0.02 * maxT, 0.25 * need)) continue;
+        send = Math.min(budget, gap);
+        if (send < 0.25 * gap) continue;
+        kind = "topup";
+      } else if (others || ours) {
+        // A partial send still eats it; the next pass tops it up.
+        send = Math.min(budget, need);
+        if (send < 0.5 * need || send < o.troops()) continue;
+        kind = others ? "steal" : "finish";
+      } else {
+        if (need > budget) continue;
+        send = need;
+      }
+      const rank = (others ? 3 : ours ? 2 : 1) * 1e12 - need;
+      if (best === null || rank > best.rank) best = { o, send, rank, kind };
+    }
+    if (best === null) return;
+    this.finSent.set(best.o.id(), ticks);
+    this.finTribes.set(best.o.id(), ticks);
+    this.fin[best.kind]++;
+    if (this.fin.first < 0) this.fin.first = ticks;
+    g.addExecution(new AttackExecution(Math.ceil(best.send), me, best.o.id()));
   }
 
   // Counter incoming land attacks: our attack on the attacker cancels its
@@ -2076,8 +2163,128 @@ export class BotExecution extends NationExecution {
           return orig(pick, force);
         }
       }
+      if (this.params.structTarget > 0) {
+        const pick = this.structPick(me, o);
+        if (pick !== o) {
+          this.structRedirects++;
+          return orig(pick, force);
+        }
+      }
       return orig(target, force);
     };
+  }
+
+  // Target choice by structures near our border (user live report 2026-10-14:
+  // "if that enemy has buildings nearby or not to the border should be
+  // considered"). Captured land flips cities/ports/factories to us, so a
+  // neighbour with structures our attack can reach is worth more troops than
+  // an empty one. v2 (user 2026-10-14: "40 tile shouldn't be fix value,
+  // defense posts and landscapes also affects"): no distance cutoff. Each
+  // structure is weighted by how far an attack of half our army can push into
+  // p, using attackLogic's per-tile loss: terrain mag (plains 80, highland
+  // 100, mountain 120), x5 on tiles within 30 of p's defense post
+  // (defensePostDefenseBonus), times clamp(D/A, 0.6, 2) x (0.463 + 0.0039 x
+  // D/N). The line from our nearest front tile to the structure is walked;
+  // water and third-party land on it cost extra (the push must go around).
+  // reach = (A / loss per plains tile) / front width, and the structure adds
+  // worth / (1 + (pathCost / reach)^2): reachable ones count fully, far ones
+  // fade. The front's own cover (mean tile cost on p's side) scales the
+  // target cost, so a front under p's defense posts is dearer to hit.
+  public structRedirects = 0;
+  private structCache = new Map<string, [number, number, number]>();
+  public structEval(me: Player, p: Player): { value: number; front: number } {
+    const g = this.botGame;
+    const tick = g.ticks();
+    const c = this.structCache.get(p.id());
+    if (c !== undefined && c[0] === tick) return { value: c[1], front: c[2] };
+    const out = (value: number, front: number) => {
+      this.structCache.set(p.id(), [tick, value, front]);
+      return { value, front };
+    };
+    const front = this.frontTiles(me, p);
+    if (front.length === 0) return out(0, 1);
+    const pid = p.smallID();
+    const mid = me.smallID();
+    const posts = p.units(UnitType.DefensePost).map((u) => u.tile());
+    const covered = (t: TileRef) => posts.some((d) => g.euclideanDistSquared(d, t) <= 900);
+    const magOf = (t: TileRef) => {
+      const tt = g.terrainType(t);
+      return tt === TerrainType.Mountain ? 1.5 : tt === TerrainType.Highland ? 1.25 : 1;
+    };
+    // Cost of one tile in plains-tile units.
+    const tileW = (t: TileRef) => {
+      if (!g.isLand(t)) return 2;
+      const o = g.ownerID(t);
+      if (o === mid) return 0;
+      if (o === pid) return magOf(t) * (covered(t) ? 5 : 1);
+      return o === 0 ? 0.2 : 2;
+    };
+    const step = Math.max(1, Math.floor(front.length / 64));
+    let fw = 0;
+    let fk = 0;
+    for (let i = 0; i < front.length; i += step) {
+      const n = g.neighbors(front[i]).find((x) => g.ownerID(x) === pid);
+      if (n === undefined) continue;
+      fw += tileW(n);
+      fk++;
+    }
+    const frontCost = fk > 0 ? fw / fk : 1;
+    const A = Math.max(1, 0.5 * me.troops());
+    const D = Math.max(1, p.troops());
+    const N = Math.max(1, p.numTilesOwned());
+    const lossPlains = 80 * Math.min(2, Math.max(0.6, D / A)) * (0.463 + 0.0039 * (D / N));
+    const reach = Math.max(1, A / lossPlains / front.length);
+    let v = 0;
+    for (const u of p.units(UnitType.City, UnitType.Port, UnitType.Factory)) {
+      const worth = u.type() === UnitType.City ? u.level() : u.type() === UnitType.Port ? 0.7 * u.level() : 0.5 * u.level();
+      const ut = u.tile();
+      let b = front[0];
+      let bd = Infinity;
+      for (let i = 0; i < front.length; i += step) {
+        const d = g.euclideanDistSquared(front[i], ut);
+        if (d < bd) {
+          bd = d;
+          b = front[i];
+        }
+      }
+      const x0 = g.x(b);
+      const y0 = g.y(b);
+      const dx = g.x(ut) - x0;
+      const dy = g.y(ut) - y0;
+      const n = Math.max(Math.abs(dx), Math.abs(dy));
+      let cost = 0;
+      for (let i = 1; i <= n && cost < 6 * reach; i++) {
+        cost += tileW(g.ref(Math.round(x0 + (dx * i) / n), Math.round(y0 + (dy * i) / n)));
+      }
+      const r = cost / reach;
+      v += worth / (1 + r * r);
+    }
+    return out(v, frontCost);
+  }
+  public structValue(me: Player, p: Player): number {
+    return this.structEval(me, p).value;
+  }
+
+  private structPick(me: Player, o: Player): Player {
+    const cost = (p: Player) => {
+      const e = this.structEval(me, p);
+      return (Math.max(1, p.troops()) * e.front) / (1 + this.params.structTarget * e.value);
+    };
+    let best = o;
+    let bestC = cost(o);
+    for (const x of me.nearby()) {
+      if (!x.isPlayer() || x === me || x === o || !me.sharesBorderWith(x)) continue;
+      const p = x as Player;
+      if (p.type() === PlayerType.Bot || !p.isAlive() || me.isFriendly(p) || this.isFriend(me, p)) continue;
+      if (!me.canAttackPlayer(p) || p.isDisconnected()) continue;
+      if (me.troops() < this.pvpReq(me, p) * Math.max(1, p.troops())) continue;
+      const c = cost(p);
+      if (c < 0.8 * bestC) {
+        best = p;
+        bestC = c;
+      }
+    }
+    return best;
   }
 
   /** Troop ratio we need over o before attacking it (eased when others already hit it). */
@@ -2225,7 +2432,8 @@ export class BotExecution extends NationExecution {
       // out right after the boat; a boat that lands on an ally takes the port
       // tile without an attack, so a yes is a free port and no betrayal.
       const ally = this.params.snipeAlly > 0 && o.type() !== PlayerType.Bot &&
-        !me.sharesBorderWith(o) && me.canSendAllianceRequest(o);
+        !me.sharesBorderWith(o) && me.canSendAllianceRequest(o) &&
+        (this.params.baitHuman <= 0 || o.type() !== PlayerType.Human || o.troops() <= this.params.baitHuman * troops);
       if (!losing && !ally) continue;
       const dens = o.troops() / Math.max(1, o.numTilesOwned());
       const send = Math.max(1000, this.params.snipeK * dens * 40);

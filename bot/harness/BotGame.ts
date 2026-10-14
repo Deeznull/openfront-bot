@@ -322,6 +322,8 @@ export async function playGame(
   }
   let tribeStalls = 0;
   let tribeKills = 0;
+  const tribesHit = new Map<string, Player>(); // every tribe we attacked (alive at the end = left half-eaten)
+  let tribes10: number[] | null = null; // [attacked, still alive] at 10:00
   const leaderTiles = () => {
     let best = 0;
     for (const q of majors()) if (q.isAlive() && q.id() !== me.id && q.numTilesOwned() > best) best = q.numTilesOwned();
@@ -435,7 +437,9 @@ export async function playGame(
         if (!tg.isPlayer() || (tg as Player).type() !== PlayerType.Bot) continue;
         now.add(at.id());
         if (!tribeAtk.has(at.id())) tribeAtk.set(at.id(), tg as Player);
+        tribesHit.set((tg as Player).id(), tg as Player);
       }
+      if (tribes10 === null && sec >= 600) tribes10 = [tribesHit.size, [...tribesHit.values()].filter((t) => t.isAlive()).length];
       for (const [id, tg] of tribeAtk) {
         if (now.has(id)) continue;
         if (tg.isAlive()) {
@@ -518,7 +522,8 @@ export async function playGame(
     grabs: bot.grabsSent,
     pirates: bot.piratesBuilt,
     tribe: { kills: tribeKills, stalls: tribeStalls, sized: (bot as any).killsSized ?? 0, held: (bot as any).killsHeld ?? 0,
-      steals: (bot as any).steals ?? 0, pvpSkips: (bot as any).pvpSkips ?? 0 },
+      steals: (bot as any).steals ?? 0, pvpSkips: (bot as any).pvpSkips ?? 0,
+      hit: tribesHit.size, at10: tribes10, left: [...tribesHit.values()].filter((t) => t.isAlive()).length, fin: (bot as any).fin ?? null },
     boats: (bot as any).boatPicks ?? null,
     nukes: { sent: ((bot as any).nukeBehavior?.atomBombsLaunched ?? 0) + ((bot as any).nukeBehavior?.hydrogenBombsLaunched ?? 0),
       counter: (bot as any).counterNukes ?? 0, lapse: (bot as any).lapseStrikes ?? 0, betray: (bot as any).betrayals ?? 0, traitor: (bot as any).traitorStrikes ?? 0,

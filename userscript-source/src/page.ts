@@ -506,6 +506,16 @@ function canSend(c: GameCtx): boolean {
   return bucket.sec < perSec && bucket.min.length < perMin;
 }
 
+// Send order (user live report 2026-10-14: 115 of 495 intents dropped, chat
+// competing with attacks): troop moves and builds first, then diplomacy, chat
+// last. Chat only goes out while the minute bucket has room left for moves.
+function prio(t: string): number {
+  if (t === "emoji" || t === "quick_chat") return 2;
+  if (t === "allianceRequest" || t === "allianceExtension" || t === "allianceReject" ||
+      t === "breakAlliance" || t === "embargo") return 1;
+  return 0;
+}
+
 function pump() {
   const c = ctx;
   if (!c || !c.allowed || !botOn || c.resyncing || c.lost) return;
@@ -520,7 +530,13 @@ function pump() {
       c.handlers = c.bus ? handlersOf(c.bus) : null;
       if (!c.handlers) return; // HUD not up yet; retry next pump
     }
-    const { i } = c.queue.shift()!;
+    let k = 0;
+    for (let j = 1; j < c.queue.length; j++) if (prio(c.queue[j].i.type) < prio(c.queue[k].i.type)) k = j;
+    if (prio(c.queue[k].i.type) === 2 && c.gameType !== "Singleplayer" && bucket.min.length >= 100) {
+      // Chat waits (and goes stale) rather than eat the moves' minute budget.
+      break;
+    }
+    const { i } = c.queue.splice(k, 1)[0];
     const route = ROUTES[i.type];
     const handler = route && c.handlers[route[0]];
     if (!handler) {
