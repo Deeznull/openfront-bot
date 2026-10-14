@@ -62,7 +62,7 @@ Each test game is a full free-for-all on a random map from the online 30+ player
 | 30-49 players | 75 | 13 | ~17% | 2.8% | ~6x |
 | 50-79 players | 70 | 7 | 10% | 1.7% | ~6x |
 | 80-125 players | 55 | 7 | ~13% | 1.0% | ~13x |
-| **All FFAs** | **200** | **27** | **13.5%** | **1.92%** | **~7x** |
+| **All FFAs** | **200** | **27** | **~14%** | **1.92%** | **~7x** |
 | Default solo game (World, 72 nations, Impossible mode) | 100 | 4 | 4% | 1.4% | ~3x |
 
 The bot was not trained by reading or exploiting the Impossible AI's source code. The Impossible AI is only used as an opponent. The goal was strategy that also works against human players in online games.
