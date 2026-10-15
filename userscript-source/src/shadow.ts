@@ -176,6 +176,7 @@ export function createShadow(post: Post, onPage = false) {
     emojiMode: 1, // positive, rare; 🤝 / ☢️ with alliance asks (sent only if the emoji box is ticked)
   } as any;
   let params: BotParams = { ...AUTOPLAY_PARAMS, ...PLAY_TWEAKS };
+  let paramsKey = "{}"; // JSON of the last enable's params (page profile)
   let bot: BotExecution | null = null;
   let spawnSent = false;
 
@@ -226,15 +227,26 @@ export function createShadow(post: Post, onPage = false) {
   // Our attack and boat intents on their way to the game: sent, not yet in a
   // turn. Their troops are still ours in this engine, so the bot gets their
   // sum (inflightTroops) and its home keep doesn't spend them a second time.
-  // An intent the page dropped never lands: entries expire after INFLIGHT_TICKS.
-  const INFLIGHT_TICKS = 50;
-  let inflight: { troops: number; tick: number }[] = [];
+  // An intent the page dropped never lands: the page reports it ("dropped"),
+  // and entries expire after INFLIGHT_MS of real time anyway (the page drops
+  // what it couldn't send within 2.5 s). Real time, not ticks: at Max speed
+  // a queued send waited hundreds of ticks, expired here while still queued,
+  // and the bot spent the same troops again (live 2026-10-15: troops to ~0).
+  const INFLIGHT_MS = 6000;
+  let inflight: { troops: number; at: number }[] = [];
+  function unflight(i: any) {
+    if (i?.type !== "attack" && i?.type !== "boat") return;
+    const k = inflight.findIndex((x) => x.troops === i.troops);
+    if (k >= 0) inflight.splice(k, 1);
+  }
+  // Our defense posts sent but not on the map yet (bot.pendingPosts): the AI
+  // spaces new posts from them. Dropped once a post of ours stands within a
+  // few tiles (the game may shift the spot), or after INFLIGHT_MS.
+  let posts: { tile: number; at: number }[] = [];
   function landed(turn: any) {
     if (inflight.length === 0) return;
     for (const i of turn?.intents ?? []) {
-      if (i?.clientID !== clientID || (i.type !== "attack" && i.type !== "boat")) continue;
-      const k = inflight.findIndex((x) => x.troops === i.troops);
-      if (k >= 0) inflight.splice(k, 1);
+      if (i?.clientID === clientID) unflight(i);
     }
   }
 
@@ -331,8 +343,14 @@ export function createShadow(post: Post, onPage = false) {
     }
     if (!bot.isActive() || !me.isAlive() && !g.inSpawnPhase()) return;
     const now = g.ticks();
-    inflight = inflight.filter((x) => now - x.tick < INFLIGHT_TICKS);
+    const wall = performance.now();
+    inflight = inflight.filter((x) => wall - x.at < INFLIGHT_MS);
     (bot as any).inflightTroops = inflight.reduce((a, x) => a + x.troops, 0);
+    if (posts.length > 0) {
+      const built = me.units(UnitType.DefensePost).map((u: any) => u.tile());
+      posts = posts.filter((x) => wall - x.at < INFLIGHT_MS && !built.some((t: number) => g.manhattanDist(t, x.tile) <= 4));
+    }
+    (bot as any).pendingPosts = posts.map((x) => x.tile);
     const out = capture(g, () => bot!.tick(now));
     const intents: Intent[] = [];
     for (const c of out) {
@@ -340,7 +358,8 @@ export function createShadow(post: Post, onPage = false) {
       if (i && !aimedAtTribe(g, me, i)) {
         intents.push(i);
         if ((i.type === "attack" || i.type === "boat") && typeof i.troops === "number" && i.troops > 0)
-          inflight.push({ troops: i.troops, tick: now });
+          inflight.push({ troops: i.troops, at: wall });
+        if (i.type === "build_unit" && i.unit === UnitType.DefensePost) posts.push({ tile: i.tile, at: wall });
       }
     }
     if (intents.length > 0) post({ t: "intents", tick: g.ticks(), intents });
@@ -353,6 +372,8 @@ export function createShadow(post: Post, onPage = false) {
         tiles: me.numTilesOwned(),
         troops: Math.round(me.troops()),
         gold: Number(me.gold()),
+        mirv: (bot as any).mirvSaving?.name?.() ?? null,
+        keep: (bot as any).mirvSaving ? Math.round((bot as any).mirvReserve ?? 0) : 0,
       });
     }
   }
@@ -594,6 +615,7 @@ export function createShadow(post: Post, onPage = false) {
         mapSource = m.mapSource ?? { files: m.map };
         turns.length = 0;
         inflight = [];
+        posts = [];
         spawnSent = false;
         mirror = new Mirror(post, mySmallID);
         start(m.snapshot, true).catch((e) => post({ t: "error", msg: `shadow init failed: ${e?.message ?? e}` }));
@@ -615,18 +637,25 @@ export function createShadow(post: Post, onPage = false) {
         if (runner && !draining) mirror.sync(runner.game);
         drain();
         break;
+      case "dropped":
+        for (const i of m.intents ?? []) unflight(i);
+        break;
       case "resync":
         start(m.snapshot, false).catch((e) => post({ t: "error", msg: `resync failed: ${e?.message ?? e}` }));
         break;
       case "enable":
         enabled = !!m.on;
-        if (m.params) params = { ...AUTOPLAY_PARAMS, ...PLAY_TWEAKS, ...m.params };
+        const fresh = m.params !== undefined && JSON.stringify(m.params) !== paramsKey;
+        if (fresh) {
+          paramsKey = JSON.stringify(m.params);
+          params = { ...AUTOPLAY_PARAMS, ...PLAY_TWEAKS, ...m.params };
+        }
         if (typeof m.emojis === "boolean") emojis = m.emojis;
         if (typeof m.team === "boolean") team = m.team;
         if (typeof m.share === "boolean") share = m.share;
         params = { ...params, ...switchParams() };
         if (bot) Object.assign((bot as any).params, switchParams()); // live switch
-        if (m.params) bot = null; // re-create with the new params
+        if (fresh) bot = null; // re-create with the new params
         break;
     }
   };

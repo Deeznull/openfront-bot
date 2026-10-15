@@ -14,6 +14,7 @@
  */
 import { GameUpdateType } from "ofenums";
 import { type FeedEntry, feedEntry, feedTransfers, findHashes } from "./feed";
+import { FARM_TWEAKS } from "./farm-params";
 
 declare function __ofbotShadowMain(): void;
 declare const __OFBOT_VERSION__: string;
@@ -34,13 +35,15 @@ interface Settings {
   turbo: boolean;
   farm: boolean;
   farmGames: number;
+  min: boolean; // panel collapsed to its header
+  opts: boolean; // options (checkboxes) folded away
   v?: number; // settings format: 2 = turbo off by default (0.5.3)
   x: number;
   y: number;
 }
 const SETTINGS_KEY = "ofbot.settings.v1";
 // x < 0: default spot at the top right, under the game's timer bar.
-const settings: Settings = { autoStart: false, emojis: false, team: true, share: true, turbo: false, farm: false, farmGames: 0, x: -1, y: 130 };
+const settings: Settings = { autoStart: false, emojis: false, team: true, share: true, turbo: false, farm: false, farmGames: 0, min: false, opts: false, x: -1, y: 130 };
 try {
   const stored = JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? "{}");
   // Turbo was on by default before 0.5.3: turn it off once for everyone.
@@ -68,6 +71,7 @@ interface GameCtx {
   realWorker: Worker;
   realPost: (msg: any, transfer?: any) => void;
   gameType: string;
+  farm: boolean; // Easy solo: the farm profile (FARM_TWEAKS) plays it
   allowed: boolean;
   reason: string;
   clientID: string | undefined;
@@ -221,6 +225,7 @@ function onInit(w: Worker, realPost: GameCtx["realPost"], init: any) {
     realWorker: w,
     realPost,
     gameType,
+    farm: gameType === "Singleplayer" && String(init?.gameStartInfo?.config?.difficulty ?? "") === "Easy",
     allowed,
     reason,
     clientID,
@@ -442,6 +447,8 @@ function onShadowMessage(c: GameCtx, m: any) {
     case "intents":
       if (!botOn || c.resyncing || c.lost) return;
       for (const i of m.intents as Intent[]) enqueue(c, i);
+      // Solo: send now, not at the next 100 ms pump (Max speed runs many ticks per pump).
+      if (c.gameType === "Singleplayer") pump();
       break;
     case "state":
       c.stats = m;
@@ -549,16 +556,17 @@ function enqueue(c: GameCtx, i: Intent) {
 // intents/s and 150/min per client — stay well under both.
 const bucket = { sec: 0, secAt: 0, min: [] as number[] };
 function canSend(c: GameCtx): boolean {
+  // Solo: the local server has no intent limit, so neither do we (owner
+  // 2026-10-15: "cant it perform orders much faster"). A 10/s cap at Max
+  // speed queued intents for hundreds of ticks until they went stale.
+  if (c.gameType === "Singleplayer") return true;
   const now = performance.now();
   if (now - bucket.secAt >= 1000) {
     bucket.sec = 0;
     bucket.secAt = now;
   }
   bucket.min = bucket.min.filter((t) => now - t < 60_000);
-  const online = c.gameType !== "Singleplayer";
-  const perSec = online ? 5 : 10;
-  const perMin = online ? 130 : Infinity;
-  return bucket.sec < perSec && bucket.min.length < perMin;
+  return bucket.sec < 5 && bucket.min.length < 130;
 }
 
 // Send order (user live report 2026-10-14: 115 of 495 intents dropped, chat
@@ -576,14 +584,16 @@ function pump() {
   if (!c || !c.allowed || !botOn || c.resyncing || c.lost) return;
   const now = performance.now();
   // Decisions go stale: drop what couldn't be sent within 2.5 s.
-  const before = c.queue.length;
-  c.queue = c.queue.filter((q) => now - q.at < 2500);
-  c.dropped += before - c.queue.length;
+  // Dropped troop moves go back to the shadow, so its in-flight sum (the
+  // troops it holds back for sends on their way) frees them at once.
+  const gone: Intent[] = [];
+  c.queue = c.queue.filter((q) => now - q.at < 2500 || (gone.push(q.i), false));
+  c.dropped += gone.length;
   while (c.queue.length && canSend(c)) {
     if (!c.handlers || !c.bus) {
       c.bus = findBus();
       c.handlers = c.bus ? handlersOf(c.bus) : null;
-      if (!c.handlers) return; // HUD not up yet; retry next pump
+      if (!c.handlers) break; // HUD not up yet; retry next pump
     }
     let k = 0;
     for (let j = 1; j < c.queue.length; j++) if (prio(c.queue[j].i.type) < prio(c.queue[k].i.type)) k = j;
@@ -596,19 +606,26 @@ function pump() {
     const handler = route && c.handlers[route[0]];
     if (!handler) {
       c.dropped++;
+      gone.push(i);
       continue;
     }
     try {
       handler(route[1](i));
       c.sent++;
-      bucket.sec++;
-      bucket.min.push(now);
+      if (c.gameType !== "Singleplayer") {
+        bucket.sec++;
+        bucket.min.push(now);
+      }
     } catch (e) {
       console.warn("[ofbot] send failed", i, e);
+      c.dropped++;
+      gone.push(i);
       c.bus = c.handlers = null; // rediscover (new game / new bus)
-      return;
+      break;
     }
   }
+  const moves = gone.filter((i) => i.type === "attack" || i.type === "boat");
+  if (moves.length && c.shadow) c.shadow.post({ t: "dropped", intents: moves });
 }
 setInterval(pump, 100);
 
@@ -617,7 +634,11 @@ setInterval(pump, 100);
 function pushEnable() {
   const c = ctx;
   if (!c?.shadow || !c.allowed) return;
-  c.shadow.post({ t: "enable", on: botOn, emojis: settings.emojis, team: settings.team, share: settings.share });
+  // Two profiles (owner 2026-10-15): Easy solo games get FARM_TWEAKS over the
+  // general one; every other game sends {} (the shadow re-creates the bot only
+  // when the params change).
+  c.shadow.post({ t: "enable", on: botOn, emojis: settings.emojis, team: settings.team, share: settings.share,
+    params: c.farm ? FARM_TWEAKS : {} });
 }
 
 function setBot(on: boolean) {
@@ -686,10 +707,11 @@ function farmSpeedUp() {
 function farmLeave() {
   settings.farmGames++;
   saveSettings();
-  const wm = document.querySelector("win-modal") as any;
   note(`Farm: game ${settings.farmGames} done — next one`);
-  if (typeof wm?._handleExit === "function") wm._handleExit();
-  else location.assign(`${location.origin}/`);
+  // A full load of the homepage, not the win modal's in-page exit: after a
+  // death that exit left the game HUD drawn over the homepage and the next
+  // start never fired (live 2026-10-15).
+  location.assign(`${location.origin}/`);
 }
 
 function farmTick() {
@@ -772,6 +794,7 @@ function buildUI() {
   label{display:flex;gap:6px;align-items:center;color:#cbd5e1}
   .s{color:#93c5fd}.m{color:#9ca3af;word-break:break-word;max-height:48px;overflow:hidden}
   .x{cursor:pointer;color:#9ca3af;font-weight:400}
+  .of{cursor:pointer;color:#9ca3af;user-select:none}.o{display:grid;gap:5px}
 </style>
 <div class="p">
   <div class="h"><span>OpenFront Bot</span><small class="x" title="Collapse">–</small></div>
@@ -779,12 +802,15 @@ function buildUI() {
     <div class="s"></div>
     <div class="t"></div>
     <button></button>
+    <div class="of" title="Show/hide the options"></div>
+    <div class="o">
     <label><input type="checkbox" class="auto"> Auto-start in each game</label>
     <label><input type="checkbox" class="emo"> Bot may send emojis</label>
     <label><input type="checkbox" class="team"> Team up with other script bots</label>
     <label><input type="checkbox" class="share"> Send/receive troops &amp; gold with them</label>
     <label title="Solo games at Max speed: start the next turn as soon as the last one is done"><input type="checkbox" class="turbo"> Turbo solo Max speed</label>
     <label title="Starts Easy solo games one after another, played by the bot at Max speed with turbo. Uncheck to stop."><input type="checkbox" class="farm"> Farm: Easy solo games on repeat</label>
+    </div>
     <div class="m"></div>
   </div>
 </div>`;
@@ -839,9 +865,29 @@ function buildUI() {
     saveSettings();
     pushEnable();
   };
+  // Collapse the whole body from the header (–/+), or fold away only the
+  // options; both states survive reloads.
   const body = q<HTMLElement>(".b");
-  q<HTMLElement>(".x").onclick = () => {
-    body.style.display = body.style.display === "none" ? "" : "none";
+  const x = q<HTMLElement>(".x");
+  const opts = q<HTMLElement>(".o");
+  const fold = q<HTMLElement>(".of");
+  const showFolds = () => {
+    body.style.display = settings.min ? "none" : "";
+    x.textContent = settings.min ? "+" : "–";
+    x.title = settings.min ? "Expand" : "Collapse";
+    opts.style.display = settings.opts ? "none" : "";
+    fold.textContent = settings.opts ? "Options ▸" : "Options ▾";
+  };
+  showFolds();
+  x.onclick = () => {
+    settings.min = !settings.min;
+    saveSettings();
+    showFolds();
+  };
+  fold.onclick = () => {
+    settings.opts = !settings.opts;
+    saveSettings();
+    showFolds();
   };
   // Drag by the header.
   const header = q<HTMLElement>(".h");
@@ -893,18 +939,20 @@ function render() {
     status = `${c.gameType}: mirror mode,${p || " starting"}`;
   } else if (c.resyncing) status = `${c.gameType}: resyncing…`;
   else status = `${c.gameType}: in sync${c.syncedTick >= 0 ? ` @ tick ${c.syncedTick}` : ""}`;
+  if (c?.allowed && c.farm) status += " · Easy farm profile";
   ui.status.textContent = status;
   const s = c?.stats;
   ui.stats.textContent =
     c && c.allowed
       ? `${s ? (s.spawn ? "spawn phase · " : "") + (s.alive || s.spawn ? `${s.tiles} tiles · ${fmt(s.troops)} troops · ${fmt(s.gold)} gold` : "eliminated") : "—"}` +
+        (s?.mirv ? ` · MIRV bank vs ${s.mirv} (keep ${fmt(s.keep ?? 0)})` : "") +
         ` · sent ${c.sent}${c.dropped ? ` (dropped ${c.dropped})` : ""}`
       : "";
   const blocked = !!c && !c.allowed;
   ui.btn.disabled = blocked;
   ui.btn.textContent = blocked ? "Unavailable here" : botOn ? "Stop bot" : c ? "Start bot" : "Start bot (next game)";
   ui.btn.className = botOn && !blocked ? "on" : "";
-  ui.msg.textContent = (settings.farm ? `Farm: ${settings.farmGames} games · ` : "") + lastMsg;
+  ui.msg.textContent = (settings.farm ? `Farm on · ${settings.farmGames} done · ` : "") + lastMsg;
 }
 
 function fmt(n: number): string {

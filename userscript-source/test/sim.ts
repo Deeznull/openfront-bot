@@ -308,6 +308,10 @@ async function main() {
           `alive ${me.isAlive()} | hashes ok ${compared} bad ${mismatches}` +
           (sy ? ` | mirror ${(sy.pct * 100).toFixed(1)}% owned ${(sy.owned * 100).toFixed(1)}% me ${sy.meShadow}/${sy.meReal}` : ""),
       );
+      if (process.argv.includes("--econ") && me.isAlive()) {
+        const lv = (t: UnitType) => { const us = me.units(t); return `${us.length}/${us.reduce((s: number, u: any) => s + u.level(), 0)}`; };
+        console.log(`  econ gold ${Math.round(Number(me.gold()) / 1000)}k city ${lv(UnitType.City)} fact ${lv(UnitType.Factory)} port ${lv(UnitType.Port)} sam ${lv(UnitType.SAMLauncher)} silo ${lv(UnitType.MissileSilo)} post ${lv(UnitType.DefensePost)} ships ${me.units(UnitType.Warship).length}`);
+      }
       if (process.argv.includes("--neighbors") && me.isAlive()) {
         const nb = real.game.players().filter((p: any) => p !== me && p.isAlive() && me.sharesBorderWith(p));
         console.log(
@@ -329,6 +333,14 @@ async function main() {
     console.log(`DOOMSDAY ours flagged ${me.inDoomsdayClock?.() ?? "n/a"}, players flagged ${doomed}, our land share ${((me.numTilesOwned() / real.game.numLandTiles()) * 100).toFixed(2)}%`);
   }
   console.log(`SAMs (most at once) ${maxSams}, MIRVs launched ${mirvIds.size}`);
+  // Post spacing: overlapping cover adds no defense, so posts closer than
+  // one range apart are wasted gold (live 0.5.3: three stacked).
+  const postTiles = me.units(UnitType.DefensePost).map((u: any) => u.tile());
+  let closest = Infinity;
+  for (let i = 0; i < postTiles.length; i++)
+    for (let j = i + 1; j < postTiles.length; j++)
+      closest = Math.min(closest, Math.sqrt(real.game.euclideanDistSquared(postTiles[i], postTiles[j])));
+  console.log(`defense posts ${postTiles.length}, closest pair ${closest === Infinity ? "n/a" : closest.toFixed(1)} tiles (range ${real.game.config().defensePostRange()})`);
   console.log(`tribe attacks ${tribeAttacks}, snipe+ally ${snipeAllies}, ports owned ${me.units(UnitType.Port).length}, traitor ${me.isTraitor()}`);
   console.log(
     `RESULT tiles ${me.numTilesOwned()} alive ${me.isAlive()} hashes compared ${compared} mismatches ${mismatches} errors ${errors} real errors ${realErrors} tribe diplomacy ${tribeDiplomacy} (${secs}s)`,

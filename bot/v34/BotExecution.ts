@@ -18,6 +18,7 @@ import { canBuildTransportShip, targetTransportTile } from "../../game/Transport
 import { randTerritoryTileArray } from "../nation/NationUtils";
 import { calculateTerritoryCenter, nearestTileDist, nearestTileDistCapped } from "../Util";
 import { ConstructionExecution } from "../ConstructionExecution";
+import { UpgradeStructureExecution } from "../UpgradeStructureExecution";
 import { MoveWarshipExecution } from "../MoveWarshipExecution";
 import { TargetPlayerExecution } from "../TargetPlayerExecution";
 import { SpawnExecution } from "../SpawnExecution";
@@ -106,6 +107,9 @@ export interface BotParams {
   postSpread: number; // >0 = the Nation AI's defense-post spots must be >= postSpread x defensePostRange from each of our posts (a post's bonus is all-or-nothing per tile, overlapping cover adds nothing; v0.34 falls back to stacking once the front is covered)
   homeKeep: number; // >0 = every attack and boat we send (own logic and Nation AI) leaves max(homeKeep (regen ~94% of peak at .30), defense floor) x maxTroops plus the troops attacking us by land at home; sends in one tick add up. A send is trimmed to what is above that, or held if under half survives. A kill (send >= 2x the target's troops, target < 20% of our land) may go down to the defense floor; troops of an attacker we hit back are not kept (the hit cancels them 1:1); off in the doomsday clock
   mirvDuel: number; // 1 = leader endgame MIRV (FFA, needs mirvSave): 2-3 leaders (each >= half the top's land, the rest under half the smallest of them, us among them) holding >= half the land: bank for a MIRV at the biggest non-ally leader; 2 leaders and a shared border: MIRV it whenever the gold is there (no banking)
+  mirvSpend: number; // >0 = while mirvSave banks, gold above a reserve still builds (AI structures, stackUp upgrades): the deadline is fixed when banking starts (0.8 x eta, endgame 10 min) and the reserve is MIRV (+silo) cost minus mirvSpend x income x the minutes left, so it rises to the full cost by the deadline
+  stackUp: number; // >0 = City/Factory: upgrade the best one under our SAM cover (score: SAM levels covering it, then its level) instead of placing a new one; any upgradable one when gold >= stackUp x its cost or a new one finds no tile
+  selfDiff: number; // 1 = the inherited Nation AI behaviours (attack timing, structures, upgrades, SAM ratio, warship tracking, nukes, alliances) always run with Impossible logic; the lobby difficulty only drives world rules (engine send caps, natWin, ally cap). Public lobbies are Medium, so without it the bot plays a Medium nation's build/upgrade logic
   mirvDump: number; // >0 = while an enemy MIRV flies at our land (or split warheads would take >= half our troops), troops above mirvDump x maxTroops go into land now, floors skipped, but only into free land, non-allied tribes we outnumber 2x and players we outnumber 4x with the send (owner: anything else is suicide)
   samCluster: number; // >0 = SAMs only (no AI ratio SAMs) where our City/Port/Factory/Silo levels not yet under a SAM sum to >= samCluster within 0.8 SAM range, while a non-friend has a silo
   minKeep: number; // >0 = hard floor: no send of ours (attack or boat, kills included) leaves fewer than minKeep x maxTroops (+ incoming land attackers) home (owner 2026-10-14: "can bot never ever get below 20 percent max troop")
@@ -269,6 +273,9 @@ export const DEFAULT_PARAMS: BotParams = {
   mirvDuel: 0,
   samCluster: 0,
   mirvDump: 0,
+  selfDiff: 0,
+  mirvSpend: 0,
+  stackUp: 0,
   wildSize: 0,
   homeKeep: 0,
   minKeep: 0,
@@ -420,6 +427,41 @@ const RING: readonly (readonly [number, number])[] = [
   [0.991444861, -0.130526192],
 ];
 
+// selfDiff: the same game, but config().gameConfig().difficulty reads
+// Impossible. Only the inherited behaviours see it (NationExecution builds
+// them from the game passed to init); executions they add run on the real game.
+function selfDiffGame(mg: Game): Game {
+  const bind = <T extends object>(t: T, over: (k: PropertyKey) => unknown) => {
+    const cache = new Map<PropertyKey, unknown>();
+    return new Proxy(t, {
+      get(target, k) {
+        const o = over(k);
+        if (o !== undefined) return o;
+        const v = Reflect.get(target, k, target);
+        if (typeof v !== "function") return v;
+        let f = cache.get(k);
+        if (f === undefined) { f = v.bind(target); cache.set(k, f); }
+        return f;
+      },
+    });
+  };
+  let raw: unknown = null;
+  let gc: any = null;
+  const gameConfig = () => {
+    const r = mg.config().gameConfig();
+    if (r !== raw) { raw = r; gc = { ...r, difficulty: Difficulty.Impossible }; }
+    return gc;
+  };
+  let cfgRaw: unknown = null;
+  let cfgP: unknown = null;
+  const config = () => {
+    const c = mg.config();
+    if (c !== cfgRaw) { cfgRaw = c; cfgP = bind(c as object, (k) => (k === "gameConfig" ? gameConfig : undefined)); }
+    return cfgP;
+  };
+  return bind(mg, (k) => (k === "config" ? config : undefined));
+}
+
 export class BotExecution extends NationExecution {
   // Grab decision counters on stderr (the CLI sets it from GRAB_DEBUG).
   static grabDebug = false;
@@ -442,7 +484,7 @@ export class BotExecution extends NationExecution {
   }
 
   init(mg: Game) {
-    super.init(mg);
+    super.init(this.params.selfDiff > 0 ? selfDiffGame(mg) : mg);
     this.botGame = mg;
     const self = this as any;
     self.attackRate = Math.max(5, Math.round(this.params.rate));
@@ -566,6 +608,13 @@ export class BotExecution extends NationExecution {
   // this every tick re-spent the same troops and the game, which caps a send
   // at what is left, took the bot down to ~1% of max troops (World/Easy).
   public inflightTroops = 0;
+  // Our defense posts sent as build intents that aren't on the map yet (set
+  // by the userscript each tick). Until they land the AI sees no post there,
+  // so it placed the next one beside it (live 0.5.3: three posts stacked).
+  public pendingPosts: TileRef[] = [];
+  private postTiles(me: Player): TileRef[] {
+    return [...me.units(UnitType.DefensePost).map((u) => u.tile()), ...this.pendingPosts];
+  }
   // Owner 2026-10-14: "it sometimes defence posts onto each other, if 2 defence
   // posts protection intersects it doesnt make that 10x slowth".
   private patchPostSpread(sb: any) {
@@ -578,8 +627,22 @@ export class BotExecution extends NationExecution {
       const g = this.botGame;
       const me: Player = sb.player;
       const r = this.params.postSpread * g.config().defensePostRange();
-      const posts = me.units(UnitType.DefensePost).map((u) => u.tile());
+      const posts = this.postTiles(me);
       return out.filter((t) => posts.every((p) => g.euclideanDistSquared(t, p) >= r * r));
+    };
+    // The AI's post count per front (its cap is ceil(threat / 0.4) posts)
+    // counts the pending ones too, with the AI's own reach (1.5 border spacings).
+    if (typeof sb.countDefensePostsNearFront !== "function") return;
+    const count = sb.countDefensePostsNearFront.bind(sb);
+    sb.countDefensePostsNearFront = (front: TileRef[], cap?: number): number => {
+      let n: number = count(front, cap);
+      if (this.pendingPosts.length === 0 || front.length === 0 || (cap !== undefined && n >= cap)) return n;
+      const g = this.botGame;
+      const reach = 1.5 * (sb.spacingConstants?.().borderSpacing ?? g.config().defensePostRange());
+      for (const p of this.pendingPosts) {
+        if (front.some((t) => g.euclideanDistSquared(t, p) <= reach * reach)) n++;
+      }
+      return cap === undefined ? n : Math.min(n, cap);
     };
   }
 
@@ -716,6 +779,7 @@ export class BotExecution extends NationExecution {
     if (this.params.traitorK > 0 && ticks % 10 === 3) this.traitorStrikeTick(ticks);
     if ((this.params.mirvBank > 0 || this.params.mirvSave > 0) && ticks % 10 === 4) this.mirvBankTick(ticks);
     if (this.params.mirvSave > 0 && !self.__mirvLock && self.structureBehavior) this.patchMirvLock(self);
+    if (this.params.stackUp > 0 && sb && !sb.__stack) this.patchStack(sb);
     if (this.params.boatChain > 0 && ticks % 10 === 5) this.boatChainTick(ticks);
     if (this.params.boatStrike > 0 && ticks % 30 === 11) this.boatStrikeTick(ticks);
     if (this.params.defPost > 0 && ticks % 50 === 6) this.defPostTick();
@@ -2331,9 +2395,9 @@ export class BotExecution extends NationExecution {
       if (front.length === 0) continue;
       const want = Math.min(3, Math.max(1, Math.ceil(threat / mine)));
       const step = Math.max(1, Math.floor(front.length / 32));
-      const have = me.units(UnitType.DefensePost).filter((d) => {
+      const have = this.postTiles(me).filter((d) => {
         for (let i = 0; i < front.length; i += step) {
-          if (g.euclideanDistSquared(front[i], d.tile()) <= g.config().defensePostRange() ** 2) return true;
+          if (g.euclideanDistSquared(front[i], d) <= g.config().defensePostRange() ** 2) return true;
         }
         return false;
       }).length;
@@ -2360,7 +2424,7 @@ export class BotExecution extends NationExecution {
     // front its neighbour doesn't cover: skip covered front, keep posts >= 1.5
     // ranges apart.
     const R = g.config().defensePostRange();
-    const posts = me.units(UnitType.DefensePost).map((u) => u.tile());
+    const posts = this.postTiles(me);
     const near = (t: TileRef, r: number) => posts.some((p) => g.euclideanDistSquared(t, p) < r * r);
     for (const { t } of cand) {
       if (near(t, R)) continue;
@@ -2512,6 +2576,7 @@ export class BotExecution extends NationExecution {
       if (this.goldGains.length > 60) this.goldGains.shift();
     }
     this.goldPrev = gold;
+    this.mirvReserve = 0; // set again below while banking (a new bank rebases the deadline)
     const cfg = g.config();
     if (cfg.isUnitDisabled(UnitType.MIRV) || cfg.isUnitDisabled(UnitType.MissileSilo)) { this.mirvSaving = null; return; }
     let pick: { T: Player; eta: number; mode?: "duel" | "endgame" } | null = this.mirvThreat(me);
@@ -2545,8 +2610,19 @@ export class BotExecution extends NationExecution {
     if (pick.mode === undefined && pick.eta === Infinity && silos > 0) { this.mirvSaving = null; return; }
     const perMin = this.goldGains.length >= 30 ? (this.goldGains.reduce((a, b) => a + b, 0) * 60) / this.goldGains.length : 0;
     const minutes = need <= 0 ? 0 : perMin > 0 ? need / perMin : Infinity;
-    this.mirvSaving = minutes <= (pick.mode === "endgame" ? 10 : 0.8 * pick.eta) ? T : null;
+    const budget = pick.mode === "endgame" ? 10 : 0.8 * pick.eta;
+    const was = this.mirvSaving;
+    this.mirvSaving = minutes <= budget ? T : null;
+    if (this.mirvSaving === null) return;
+    // mirvSpend: the deadline is fixed when banking starts (or the threat speeds up),
+    // so the reserve climbs to the full cost by then instead of sliding forever.
+    const end = ticks + budget * 600;
+    if (was !== T || this.mirvDeadline < 0 || end < this.mirvDeadline) this.mirvDeadline = end;
+    const left = Math.max(0, (this.mirvDeadline - ticks) / 600);
+    this.mirvReserve = Math.max(0, need + gold - this.params.mirvSpend * perMin * left);
   }
+  public mirvDeadline = -1;
+  public mirvReserve = 0;
   // mirvDuel. Owner 2026-10-14: "if the bot became 1v1 situations on
   // leadership and if it has border with that enemy, it should mirv it once
   // it has the money. if game became 3 or 2 players got bigger and became
@@ -2661,6 +2737,47 @@ export class BotExecution extends NationExecution {
     sb.maybeSpawnStructure = (type: UnitType) => (type === UnitType.SAMLauncher ? false : orig(type));
     sb.__sam = true;
   }
+  // stackUp. Owner 2026-10-15: "it sometimes stop spending money and misses
+  // many stacked building opportinities". An upgrade costs what a new one
+  // costs, is instant and needs no tile; a level under our SAMs is shielded
+  // from nukes, and a factory level spawns more trains. The AI only upgrades
+  // past 1 structure per 1500 tiles and picks at random up to 70% of the time.
+  public stackUps = 0;
+  private patchStack(sb: any) {
+    sb.__stack = true;
+    const orig = sb.maybeSpawnStructure.bind(sb);
+    const stack = (type: UnitType, anyOk: boolean): boolean => {
+      const me: Player = sb.player;
+      const g = this.botGame;
+      const cost = g.unitInfo(type).cost(g, me);
+      if (me.gold() < cost) return false;
+      const sams = me.units(UnitType.SAMLauncher).filter((s) => !s.isUnderConstruction());
+      const cfg = g.config();
+      let best: any = null;
+      let bestS = -1;
+      for (const u of me.units(type)) {
+        if (u.isUnderConstruction() || !me.canUpgradeUnit(u)) continue;
+        let cover = 0;
+        for (const s of sams) if (g.euclideanDistSquared(u.tile(), s.tile()) <= cfg.samRange(s.level()) ** 2) cover += s.level();
+        if (cover === 0 && !anyOk) continue;
+        const sc = cover * 100 + u.level();
+        if (sc > bestS) { bestS = sc; best = u; }
+      }
+      if (best === null) return false;
+      g.addExecution(new UpgradeStructureExecution(me, best.id()));
+      this.stackUps++;
+      return true;
+    };
+    sb.maybeSpawnStructure = (type: UnitType) => {
+      if (type !== UnitType.City && type !== UnitType.Factory) return orig(type);
+      const me: Player = sb.player;
+      const g = this.botGame;
+      const rich = Number(me.gold()) >= this.params.stackUp * Number(g.unitInfo(type).cost(g, me));
+      if (stack(type, rich)) return true;
+      if (orig(type)) return true;
+      return stack(type, true);
+    };
+  }
   private patchMirvLock(self: any) {
     self.__mirvLock = true;
     const sb = self.structureBehavior;
@@ -2668,7 +2785,18 @@ export class BotExecution extends NationExecution {
     sb.handleStructures = () => {
       if (this.mirvSaving === null) return origS();
       if (sb.player.unitCount(UnitType.MissileSilo) === 0) return sb.maybeSpawnStructure(UnitType.MissileSilo);
-      return false;
+      if (this.params.mirvSpend <= 0) return false;
+      // mirvSpend: the AI sees only the gold above the reserve (real gold
+      // checks in canBuild/upgrade still use the full amount).
+      const me = sb.player;
+      const spare = Number(me.gold()) - this.mirvReserve;
+      if (spare < 125_000) return false;
+      me.gold = () => BigInt(Math.floor(spare));
+      try {
+        return origS();
+      } finally {
+        delete me.gold;
+      }
     };
     const wb = self.warshipBehavior;
     if (wb && typeof wb.maybeSpawnWarship === "function") {
