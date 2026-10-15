@@ -105,6 +105,9 @@ export interface BotParams {
   mirvRich: number; // >0 (needs mirvSave) = with no runaway, gold >= MIRV (+ silo if none) and the biggest non-ally land holder: MIRV it when (gold / cost) x (its land / ours) >= mirvRich and its land >= 0.6x ours (owner: "bot had so much money but he didnt even merv")
   postSpread: number; // >0 = the Nation AI's defense-post spots must be >= postSpread x defensePostRange from each of our posts (a post's bonus is all-or-nothing per tile, overlapping cover adds nothing; v0.34 falls back to stacking once the front is covered)
   homeKeep: number; // >0 = every attack and boat we send (own logic and Nation AI) leaves max(homeKeep (regen ~94% of peak at .30), defense floor) x maxTroops plus the troops attacking us by land at home; sends in one tick add up. A send is trimmed to what is above that, or held if under half survives. A kill (send >= 2x the target's troops, target < 20% of our land) may go down to the defense floor; troops of an attacker we hit back are not kept (the hit cancels them 1:1); off in the doomsday clock
+  mirvDuel: number; // 1 = leader endgame MIRV (FFA, needs mirvSave): 2-3 leaders (each >= half the top's land, the rest under half the smallest of them, us among them) holding >= half the land: bank for a MIRV at the biggest non-ally leader; 2 leaders and a shared border: MIRV it whenever the gold is there (no banking)
+  mirvDump: number; // >0 = while an enemy MIRV flies at our land (or split warheads would take >= half our troops), troops above mirvDump x maxTroops go into land now, floors skipped, but only into free land, non-allied tribes we outnumber 2x and players we outnumber 4x with the send (owner: anything else is suicide)
+  samCluster: number; // >0 = SAMs only (no AI ratio SAMs) where our City/Port/Factory/Silo levels not yet under a SAM sum to >= samCluster within 0.8 SAM range, while a non-friend has a silo
   minKeep: number; // >0 = hard floor: no send of ours (attack or boat, kills included) leaves fewer than minKeep x maxTroops (+ incoming land attackers) home (owner 2026-10-14: "can bot never ever get below 20 percent max troop")
   wildSize: number; // >0 = an AI boat to unowned land carries wildSize x the troops its connected wilderness costs to take (sum of per-tile attacker losses), at least 200, never more than the AI chose; a wilderness over 4000 tiles keeps the AI size
   farAlly: number; // >0 = a player we don't border is no ally (no accept, renewal, ask or ally-bait boat) unless it can hurt us from afar (farThreat score >= 1, no single factor is enough: silo .5, gold for a hydrogen bomb +.5 / atom bomb +.25, nuked us +2, embargoes us +.5, each of our trade ships it captured in the last 10 min +.5, its boats at our land 5 x their troops / ours, strong +.5)
@@ -263,6 +266,9 @@ export const DEFAULT_PARAMS: BotParams = {
   allyFood: 0.4,
   mirvSave: 0,
   mirvRich: 0,
+  mirvDuel: 0,
+  samCluster: 0,
+  mirvDump: 0,
   wildSize: 0,
   homeKeep: 0,
   minKeep: 0,
@@ -449,7 +455,10 @@ export class BotExecution extends NationExecution {
   // defence". Every send of ours passes keepHome() first.
   tick(ticks: number) {
     const me: Player | null = (this as any).player ?? null;
-    if ((this.params.homeKeep <= 0 && this.params.minKeep <= 0) || me === null) return this.tickBody(ticks);
+    if ((this.params.homeKeep <= 0 && this.params.minKeep <= 0) || me === null) {
+      this.homePending = 0;
+      return this.tickBody(ticks);
+    }
     const g = this.botGame as any;
     const orig = g.addExecution;
     this.homePending = 0;
@@ -489,6 +498,66 @@ export class BotExecution extends NationExecution {
     }
     return { keep: Math.max(keep, 0.05), loss };
   }
+  // mirvDump. A MIRV at our land leaves us ~3% of max troops whatever we keep
+  // home: each warhead tile takes up to 500 (nukeDeathFactor), from home, our
+  // attacks and our boats alike, and its 350 warheads cover the target's land
+  // (1500 range). Land already taken stays, so while one flies at us troops
+  // above mirvDump x max go into land now. Owner 2026-10-14: "if enemy is very
+  // vulnerable u can attack, but otherwise it will be suicide": free land,
+  // non-allied tribes we outnumber 2x, players we outnumber 4x; floors skipped.
+  public mirvDumps = 0;
+  private dumping = false;
+  private mirvIncoming(me: Player): boolean {
+    const g = this.botGame;
+    for (const u of g.units(UnitType.MIRV)) {
+      const t = u.targetTile();
+      if (u.owner() !== me && t !== undefined && g.owner(t) === me) return true;
+    }
+    // Already split: warheads that would take at least half our troops.
+    return this.nukeLoss(me).loss >= 0.5 * me.troops();
+  }
+  private mirvDumpTick(me: Player) {
+    const g = this.botGame;
+    if (!me.isAlive() || g.inSpawnPhase() || !this.mirvIncoming(me)) return;
+    const maxT = g.config().maxTroops(me);
+    let avail = me.troops() - this.params.mirvDump * maxT - this.inflightTroops - this.homePending;
+    if (avail < 1) return;
+    const picks: { p: Player | null; need: number }[] = [];
+    const border = [...me.borderTiles()];
+    const step = Math.max(1, Math.floor(border.length / 200));
+    let free = false;
+    for (let i = 0; i < border.length && !free; i += step) {
+      free = g.neighbors(border[i]).some((n) => g.isLand(n) && !g.hasOwner(n));
+    }
+    const weak: { p: Player; need: number }[] = [];
+    for (const x of me.nearby()) {
+      if (!x.isPlayer() || x === me || !me.sharesBorderWith(x)) continue;
+      const p = x as Player;
+      if (!p.isAlive() || me.isFriendly(p) || this.isFriend(me, p) || this.holdsAlly(me, p) || !me.canAttackPlayer(p)) continue;
+      const need = (p.type() === PlayerType.Bot ? 2 : 4) * p.troops();
+      if (need <= avail) weak.push({ p, need });
+    }
+    // Players first (cheapest first, each needs its full share), free land
+    // takes the rest.
+    weak.sort((a, b) => a.need - b.need);
+    picks.push(...weak.slice(0, free ? 2 : 3));
+    if (free) picks.push({ p: null, need: 0 });
+    const n = picks.length;
+    for (let i = 0; i < n && avail >= 1; i++) {
+      const c = picks[i];
+      const send = Math.floor(Math.max(avail / (n - i), c.need));
+      if (send > avail || send < 1) continue;
+      this.dumping = true;
+      try {
+        g.addExecution(new AttackExecution(send, me, c.p === null ? null : c.p.id()));
+      } finally {
+        this.dumping = false;
+      }
+      this.homePending += send;
+      avail -= send;
+      this.mirvDumps++;
+    }
+  }
   public homeHeld = 0;
   private homePending = 0;
   // Troops of our sends that are still on their way to the game (a client
@@ -516,6 +585,7 @@ export class BotExecution extends NationExecution {
 
   /** Trims (or holds) a send of ours so the regen/defense home keep stays. */
   private keepHome(me: Player, e0: unknown): boolean {
+    if (this.dumping) return true; // mirvDump sized it already
     const e = e0 as any;
     let field: "startTroops" | "troops";
     let target: Player | null = null;
@@ -638,6 +708,8 @@ export class BotExecution extends NationExecution {
     if (this.params.earlyCity > 0 && sb && !sb.__early) this.patchEarlyCity(sb);
     if (this.params.postSpread > 0 && sb && !sb.__spread) this.patchPostSpread(sb);
     if (this.params.earlySilo > 0 && sb && !sb.__silo) this.patchSilo(sb);
+    if (this.params.samCluster > 0 && sb && !sb.__sam) this.patchSam(sb);
+    if (this.params.samCluster > 0 && ticks % 50 === 7 && self.player) this.samClusterTick(self.player);
     if (this.params.counterNuke > 0 && ticks % 10 === 1) this.counterNukeTick(ticks);
     if (this.params.lapseStrike > 0 && ticks % 10 === 2) this.lapseStrikeTick(ticks);
     if (this.params.farAlly > 0 && ticks % 5 === 1 && self.player) this.trackPiracy(self.player, ticks);
@@ -648,6 +720,7 @@ export class BotExecution extends NationExecution {
     if (this.params.boatStrike > 0 && ticks % 30 === 11) this.boatStrikeTick(ticks);
     if (this.params.defPost > 0 && ticks % 50 === 6) this.defPostTick();
     if (this.params.doomAware > 0 && ticks % 10 === 8) this.doomTick(ticks);
+    if (this.params.mirvDump > 0 && ticks % 5 === 3 && self.player) this.mirvDumpTick(self.player);
     if (this.params.pirate > 0 && ticks % Math.max(10, Math.round(this.params.pirateEvery)) === 0) this.pirate();
     // Late game: restore nuke/SAM saving (instance props shadow the prototype).
     if (sb && sb.__econ && !sb.__econOff && this.params.econUntil > 0 &&
@@ -2441,7 +2514,8 @@ export class BotExecution extends NationExecution {
     this.goldPrev = gold;
     const cfg = g.config();
     if (cfg.isUnitDisabled(UnitType.MIRV) || cfg.isUnitDisabled(UnitType.MissileSilo)) { this.mirvSaving = null; return; }
-    let pick = this.mirvThreat(me);
+    let pick: { T: Player; eta: number; mode?: "duel" | "endgame" } | null = this.mirvThreat(me);
+    if (pick === null && this.params.mirvDuel > 0 && ticks >= 5 * 600) pick = this.mirvDuelTarget(me);
     if (pick === null && this.params.mirvRich > 0) {
       const T = this.mirvRichTarget(me, gold, ticks);
       if (T !== null) pick = { T, eta: Infinity };
@@ -2464,12 +2538,96 @@ export class BotExecution extends NationExecution {
         return;
       }
     }
-    // mirvRich with a silo but no MIRV now (cooldown, unbuildable): don't hold the economy.
-    if (pick.eta === Infinity && silos > 0) { this.mirvSaving = null; return; }
     const need = mirvCost + (silos === 0 ? Number(g.unitInfo(UnitType.MissileSilo).cost(g, me)) : 0) - gold;
+    // Duel: no banking; with the gold in hand but no silo, hold it while the silo goes up.
+    if (pick.mode === "duel") { this.mirvSaving = silos === 0 && need <= 0 ? T : null; return; }
+    // mirvRich with a silo but no MIRV now (cooldown, unbuildable): don't hold the economy.
+    if (pick.mode === undefined && pick.eta === Infinity && silos > 0) { this.mirvSaving = null; return; }
     const perMin = this.goldGains.length >= 30 ? (this.goldGains.reduce((a, b) => a + b, 0) * 60) / this.goldGains.length : 0;
     const minutes = need <= 0 ? 0 : perMin > 0 ? need / perMin : Infinity;
-    this.mirvSaving = minutes <= 0.8 * pick.eta ? T : null;
+    this.mirvSaving = minutes <= (pick.mode === "endgame" ? 10 : 0.8 * pick.eta) ? T : null;
+  }
+  // mirvDuel. Owner 2026-10-14: "if the bot became 1v1 situations on
+  // leadership and if it has border with that enemy, it should mirv it once
+  // it has the money. if game became 3 or 2 players got bigger and became
+  // sole leader candidates it may start to save up for mirv. but it must be
+  // when that 3 or 2 person endgame becomes clear." (replaces mirvRich)
+  private mirvDuelTarget(me: Player): { T: Player; eta: number; mode: "duel" | "endgame" } | null {
+    const g = this.botGame;
+    if (me.team() !== null) return null; // FFA only: team endgames are sides, not players
+    const ps = g.players()
+      .filter((p) => p.isAlive() && (p.type() === PlayerType.Human || p.type() === PlayerType.Nation))
+      .sort((a, b) => b.numTilesOwned() - a.numTilesOwned());
+    if (ps.length < 2) return null;
+    const top = ps[0].numTilesOwned();
+    const lead = ps.filter((p) => p.numTilesOwned() >= 0.5 * top);
+    if (lead.length < 2 || lead.length > 3 || !lead.includes(me)) return null;
+    const small = lead[lead.length - 1].numTilesOwned();
+    // The rest must be clearly out of the race.
+    if ((ps[lead.length]?.numTilesOwned() ?? 0) > 0.5 * small) return null;
+    const rivals = lead.filter((p) => p !== me && !this.holdsAlly(me, p) &&
+      !g.units(UnitType.MIRV).some((u) => u.owner() !== me && u.targetTile() !== undefined && g.owner(u.targetTile()!) === p));
+    if (rivals.length === 0) return null;
+    const T = rivals[0]; // the biggest (ps is sorted)
+    const land = Math.max(1, g.numLandTiles() - g.numTilesWithFallout());
+    if (lead.reduce((s, p) => s + p.numTilesOwned(), 0) >= 0.5 * land) return { T, eta: Infinity, mode: "endgame" };
+    if (lead.length === 2 && me.sharesBorderWith(T)) return { T, eta: Infinity, mode: "duel" };
+    return null;
+  }
+
+  // samCluster. Owner 2026-10-14: "why it doesnt build sams, it should built
+  // only to places where there is many valuable buildings close to each other
+  // or stacked". Value = structure levels (an upgraded city counts each level)
+  // not yet under one of our SAMs; the SAM goes to the level-weighted middle
+  // of the best cluster. Only while a non-friend has a silo (else no nukes).
+  public samsBuilt = 0;
+  private samClusterTick(me: Player) {
+    const g = this.botGame;
+    const cfg = g.config();
+    if (!me.isAlive() || g.inSpawnPhase() || cfg.isUnitDisabled(UnitType.SAMLauncher) || this.mirvSaving !== null) return;
+    const threat = g.players().some((p) => p !== me && p.isAlive() && !this.isFriend(me, p) && !this.holdsAlly(me, p) &&
+      p.unitCount(UnitType.MissileSilo) > 0);
+    if (!threat) return;
+    if (Number(me.gold()) < Number(g.unitInfo(UnitType.SAMLauncher).cost(g, me))) return;
+    const sams = me.units(UnitType.SAMLauncher);
+    const kinds = new Set<UnitType>([UnitType.City, UnitType.Port, UnitType.Factory, UnitType.MissileSilo]);
+    const open = me.units().filter((u) => kinds.has(u.type()) &&
+      !sams.some((s) => g.euclideanDistSquared(u.tile(), s.tile()) <= cfg.samRange(s.level()) ** 2));
+    const r2 = (0.8 * cfg.defaultSamRange()) ** 2;
+    let bestV = 0;
+    let bx = 0;
+    let by = 0;
+    for (const u of open) {
+      let v = 0;
+      let x = 0;
+      let y = 0;
+      for (const w of open) {
+        if (g.euclideanDistSquared(u.tile(), w.tile()) > r2) continue;
+        v += w.level();
+        x += w.level() * g.x(w.tile());
+        y += w.level() * g.y(w.tile());
+      }
+      if (v > bestV) { bestV = v; bx = x / v; by = y / v; }
+    }
+    if (bestV < this.params.samCluster) return;
+    // Nearest buildable tile of ours to the middle (diamond rings out to 8).
+    const cx = Math.round(bx);
+    const cy = Math.round(by);
+    for (let d = 0; d <= 8; d++) {
+      for (let dx = -d; dx <= d; dx++) {
+        const r = d - Math.abs(dx);
+        for (const dy of r === 0 ? [0] : [r, -r]) {
+          if (!g.isValidCoord(cx + dx, cy + dy)) continue;
+          const t = g.ref(cx + dx, cy + dy);
+          if (g.owner(t) !== me) continue;
+          const spot = me.canBuild(UnitType.SAMLauncher, t);
+          if (spot === false) continue;
+          g.addExecution(new ConstructionExecution(me, UnitType.SAMLauncher, spot));
+          this.samsBuilt++;
+          return;
+        }
+      }
+    }
   }
   // mirvRich: gold piling up with no runaway to save for. Graded: the more
   // gold over the cost and the bigger the target next to us, the sooner;
@@ -2497,6 +2655,12 @@ export class BotExecution extends NationExecution {
     return q >= 0.6 && r * q >= this.params.mirvRich ? T : null;
   }
   /** While mirvSaving: no AI structures (but a missing silo), warships or nukes. */
+  // samCluster replaces the AI's SAM-per-city ratio: its own SAMs are off.
+  private patchSam(sb: any) {
+    const orig = sb.maybeSpawnStructure.bind(sb);
+    sb.maybeSpawnStructure = (type: UnitType) => (type === UnitType.SAMLauncher ? false : orig(type));
+    sb.__sam = true;
+  }
   private patchMirvLock(self: any) {
     self.__mirvLock = true;
     const sb = self.structureBehavior;

@@ -819,6 +819,219 @@ describe("BotExecution mirvSave", () => {
   });
 });
 
+describe("BotExecution mirvDuel", () => {
+  // big_plains: 200x200 = 40000 land tiles.
+  type Rect = [number, number, number, number];
+  const make = async (mine: Rect, others: Rect[], goldX: number, ticks = 3000) => {
+    const infos = [new PlayerInfo("me", PlayerType.Human, null, "me")];
+    others.forEach((_, i) => infos.push(new PlayerInfo(`p${i}`, PlayerType.Human, null, `p${i}`)));
+    const game = await setup("big_plains", {}, infos);
+    const mp = game.player("me");
+    const ps = others.map((_, i) => game.player(`p${i}`));
+    conquerRect(game, mp, ...mine);
+    others.forEach((r, i) => conquerRect(game, ps[i], ...r));
+    for (const p of [mp, ...ps]) p.setTroops(100_000);
+    mp.buildUnit(UnitType.MissileSilo, game.ref(mine[0] + 5, mine[1] + 5), {});
+    const bot = new BotExecution("md", new Nation(undefined, infos[0]), { ...DEFAULT_PARAMS, potW: 0, mirvSave: 2, mirvDuel: 1 });
+    bot.init(game);
+    const b = bot as any;
+    b.player = mp;
+    b.goldPrev = -1;
+    b.goldGains = Array(60).fill(50_000); // 3M a minute
+    const cost = Number(game.unitInfo(UnitType.MIRV).cost(game, mp));
+    mp.addGold(BigInt(Math.ceil(goldX * cost)) - mp.gold());
+    const fired: any[] = [];
+    b.mirvBehavior = { maybeSendMIRV: (t: any) => fired.push(t) };
+    const tick = (t = ticks) => b.mirvSaveTick(mp, t);
+    return { game, mp, ps, b, fired, tick, cost };
+  };
+
+  test("1v1 leaders sharing a border: MIRV the other once the gold is there, no banking before", async () => {
+    const duel = await make([0, 0, 40, 60], [[40, 0, 40, 60], [150, 150, 20, 20]], 1.05);
+    duel.tick();
+    expect(duel.fired).toEqual([duel.ps[0]]);
+    const poor = await make([0, 0, 40, 60], [[40, 0, 40, 60], [150, 150, 20, 20]], 0.5);
+    poor.tick();
+    expect(poor.fired).toEqual([]);
+    expect(poor.b.mirvSaving).toBe(null); // 12% of the land: no endgame, so no saving
+  });
+
+  test("no duel without a shared border, with a third contender, before minute 5 or against an ally", async () => {
+    const far = await make([0, 0, 40, 60], [[120, 0, 40, 60], [150, 150, 20, 20]], 1.05);
+    far.tick();
+    expect(far.fired).toEqual([]);
+    const three = await make([0, 0, 40, 60], [[40, 0, 40, 60], [120, 100, 40, 40]], 1.05); // 1600 >= half of 2400
+    three.tick();
+    expect(three.fired).toEqual([]);
+    const early = await make([0, 0, 40, 60], [[40, 0, 40, 60]], 1.05);
+    early.tick(2000);
+    expect(early.fired).toEqual([]);
+    const ally = await make([0, 0, 40, 60], [[40, 0, 40, 60]], 1.05);
+    vi.spyOn(ally.b, "holdsAlly").mockReturnValue(true);
+    ally.tick();
+    expect(ally.fired).toEqual([]);
+  });
+
+  test("a clear 2-3 player endgame (>= half the land) banks, then MIRVs the biggest rival", async () => {
+    const e = await make([0, 0, 60, 120], [[60, 0, 70, 120], [130, 0, 70, 100], [0, 160, 20, 20]], 0.2);
+    e.tick(); // 7200 + 8400 + 7000 = 22600 of 40000; the 400-tile outsider is out of it
+    expect(e.fired).toEqual([]);
+    expect(e.b.mirvSaving).toBe(e.ps[0]);
+    e.mp.addGold(BigInt(e.cost) - e.mp.gold());
+    e.tick(3010);
+    expect(e.fired).toEqual([e.ps[0]]);
+    expect(e.b.mirvSaving).toBe(null);
+  });
+
+  test("no endgame saving when we are not a leader, or the leaders hold under half the land", async () => {
+    const out = await make([0, 0, 40, 60], [[40, 0, 100, 100], [140, 0, 60, 130]], 0.2); // 2400 vs 10000 and 7800
+    vi.spyOn(out.b, "mirvThreat").mockReturnValue(null);
+    out.tick();
+    expect(out.b.mirvSaving).toBe(null);
+    const small = await make([0, 0, 60, 60], [[100, 0, 60, 70], [0, 140, 60, 60]], 0.2); // 11800 < 20000, no border
+    small.tick();
+    expect(small.b.mirvSaving).toBe(null);
+  });
+});
+
+describe("BotExecution mirvDump", () => {
+  // me 0-100 x 0-100 (row 100 below is free land), a tribe at 100-120 x 0-40,
+  // a human at 100-120 x 40-100. A MIRV is mocked flying at our land.
+  const make = async (tribeT: number, humanT: number, mirv = true) => {
+    const me = new PlayerInfo("me", PlayerType.Human, null, "me");
+    const tribe = new PlayerInfo("tribe", PlayerType.Bot, null, "tribe");
+    const hum = new PlayerInfo("hum", PlayerType.Human, null, "hum");
+    const game = await setup("big_plains", {}, [me, tribe, hum]);
+    const mp = game.player("me");
+    const tp = game.player("tribe");
+    const hp = game.player("hum");
+    conquerRect(game, mp, 0, 0, 100, 100);
+    conquerRect(game, tp, 100, 0, 20, 40);
+    conquerRect(game, hp, 100, 40, 20, 60);
+    const bot = new BotExecution("md", new Nation(undefined, me), { ...DEFAULT_PARAMS, mirvDump: 0.05, minKeep: 0.2, homeKeep: 0.3 });
+    bot.init(game);
+    const b = bot as any;
+    b.player = mp;
+    const maxT = game.config().maxTroops(mp);
+    mp.setTroops(0.6 * maxT);
+    tp.setTroops(tribeT * maxT);
+    hp.setTroops(humanT * maxT);
+    if (mirv) {
+      const orig = game.units.bind(game);
+      vi.spyOn(game, "units").mockImplementation(((...ts: UnitType[]) =>
+        ts.includes(UnitType.MIRV) ? [{ owner: () => hp, targetTile: () => game.ref(5, 5) }] : orig(...ts)) as any);
+    }
+    const got: any[] = [];
+    vi.spyOn(game as any, "addExecution").mockImplementation((...ex: any[]) => { got.push(...ex); });
+    return { game, mp, tp, hp, b, maxT, got };
+  };
+  const sends = (w: any) => w.got.filter((e: any) => e instanceof AttackExecution)
+    .map((e: any) => ({ to: e._targetID, n: e.startTroops }));
+
+  test("MIRV at us: troops above 5% go to free land and a weak tribe, never to a strong human", async () => {
+    const w = await make(0.05, 0.3);
+    w.b.tick(w.game.ticks() + 3 - (w.game.ticks() % 5));
+    const s = sends(w);
+    expect(s.map((x: any) => x.to)).toEqual([w.tp.id(), null]);
+    const total = s.reduce((a: number, x: any) => a + x.n, 0);
+    expect(total).toBeGreaterThan(0.5 * w.maxT);
+    expect(w.mp.troops() - total).toBeGreaterThanOrEqual(0.05 * w.maxT - 2);
+    expect(w.b.mirvDumps).toBe(2);
+  });
+
+  test("a human we outnumber 4x with the send is hit; one just above that is not", async () => {
+    const weak = await make(0.5, 0.1);
+    weak.b.tick(weak.game.ticks() + 3 - (weak.game.ticks() % 5));
+    expect(sends(weak).map((x: any) => x.to)).toEqual([weak.hp.id(), null]);
+    const strong = await make(0.5, 0.16);
+    strong.b.tick(strong.game.ticks() + 3 - (strong.game.ticks() % 5));
+    expect(sends(strong).map((x: any) => x.to)).toEqual([null]);
+  });
+
+  test("no MIRV, or a MIRV at someone else: nothing dumped", async () => {
+    const w = await make(0.05, 0.05, false);
+    w.b.mirvDumpTick(w.mp);
+    expect(sends(w)).toEqual([]);
+    const o = await make(0.05, 0.05, false);
+    const orig = o.game.units.bind(o.game);
+    vi.spyOn(o.game, "units").mockImplementation(((...ts: UnitType[]) =>
+      ts.includes(UnitType.MIRV) ? [{ owner: () => o.hp, targetTile: () => o.game.ref(105, 5) }] : orig(...ts)) as any);
+    o.b.mirvDumpTick(o.mp);
+    expect(sends(o)).toEqual([]);
+  });
+
+  test("an ally is never a dump target", async () => {
+    const w = await make(0.5, 0.05);
+    vi.spyOn(w.b, "holdsAlly").mockImplementation(((_m: any, p: any) => p === w.hp) as any);
+    w.b.mirvDumpTick(w.mp);
+    expect(sends(w).map((x: any) => x.to)).toEqual([null]);
+  });
+});
+
+describe("BotExecution samCluster", () => {
+  const make = async (enemySilo: boolean) => {
+    const me = new PlayerInfo("me", PlayerType.Human, null, "me");
+    const en = new PlayerInfo("en", PlayerType.Human, null, "en");
+    const game = await setup("big_plains", {}, [me, en]);
+    const mp = game.player("me");
+    const ep = game.player("en");
+    conquerRect(game, mp, 0, 0, 200, 120);
+    conquerRect(game, ep, 0, 120, 200, 80);
+    if (enemySilo) ep.buildUnit(UnitType.MissileSilo, game.ref(100, 180), {});
+    mp.addGold(100_000_000n);
+    const bot = new BotExecution("sc", new Nation(undefined, me), { ...DEFAULT_PARAMS, samCluster: 5 });
+    bot.init(game);
+    const b = bot as any;
+    b.player = mp;
+    const built: any[] = [];
+    vi.spyOn(game, "addExecution").mockImplementation((...e: any[]) => { built.push(...e); });
+    return { game, mp, b, built };
+  };
+
+  test("a SAM only over 5+ structure levels close together, once", async () => {
+    const { game, mp, b, built } = await make(true);
+    mp.buildUnit(UnitType.City, game.ref(180, 20), {}); // a lone city: never worth a SAM
+    b.samClusterTick(mp);
+    expect(built.length).toBe(0);
+    mp.buildUnit(UnitType.City, game.ref(30, 30), {});
+    mp.buildUnit(UnitType.City, game.ref(40, 30), {});
+    mp.buildUnit(UnitType.City, game.ref(30, 40), {});
+    const f = mp.buildUnit(UnitType.Factory, game.ref(40, 40), {});
+    b.samClusterTick(mp);
+    expect(built.length).toBe(0); // 4 levels
+    f.increaseLevel();
+    b.samClusterTick(mp);
+    expect(built.length).toBe(1);
+    expect(b.samsBuilt).toBe(1);
+    mp.buildUnit(UnitType.SAMLauncher, game.ref(35, 35), {}); // now covered
+    b.samClusterTick(mp);
+    expect(built.length).toBe(1);
+  });
+
+  test("a stacked city counts by level; nothing while no enemy has a silo", async () => {
+    const quiet = await make(false);
+    const c = quiet.mp.buildUnit(UnitType.City, quiet.game.ref(50, 50), {});
+    for (let i = 0; i < 4; i++) c.increaseLevel();
+    quiet.b.samClusterTick(quiet.mp);
+    expect(quiet.built.length).toBe(0);
+    const hot = await make(true);
+    const c2 = hot.mp.buildUnit(UnitType.City, hot.game.ref(50, 50), {});
+    for (let i = 0; i < 4; i++) c2.increaseLevel();
+    hot.b.samClusterTick(hot.mp);
+    expect(hot.built.length).toBe(1);
+  });
+
+  test("the AI's own SAM-per-city builds are switched off, other builds pass", async () => {
+    const { b } = await make(true);
+    const calls: any[] = [];
+    const sb: any = { maybeSpawnStructure: (t: any) => { calls.push(t); return true; } };
+    b.patchSam(sb);
+    expect(sb.maybeSpawnStructure(UnitType.SAMLauncher)).toBe(false);
+    expect(sb.maybeSpawnStructure(UnitType.City)).toBe(true);
+    expect(calls).toEqual([UnitType.City]);
+  });
+});
+
 describe("BotExecution wildSize", () => {
   test("an AI boat to a small wilderness carries only what the land costs", async () => {
     const me = new PlayerInfo("me", PlayerType.Human, null, "me");

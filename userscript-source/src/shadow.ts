@@ -159,10 +159,13 @@ export function createShadow(post: Post, onPage = false) {
     foodAll: 1, // a player under 0.4x our strength is no ally, bordering or overseas
     humansOnly: 1, // never ally AI Nations
     farAlly: 1, // a player we don't border is no ally unless its combined far threat (silo, bomb gold, nuked/embargoed us, captured our ships, boats at us, strength) scores >= 1
-    mirvRich: 1.5, // no runaway but gold piling up: MIRV the biggest non-ally when (gold/cost) x (its land/ours) >= 1.5 and it has >= 0.6x our land
+    mirvRich: 0, // off since 0.5.3 (owner: the 1.5x-the-cost spend was a bad rule); mirvDuel replaces it
+    mirvDuel: 1, // FFA leader endgame: 2 leaders sharing a border -> MIRV the other as soon as the gold is there; a clear 2-3 leader endgame (each >= half the top, the rest under half the smallest, together >= half the land) -> bank for a MIRV at the biggest rival
+    samCluster: 5, // SAMs only over clusters: >= 5 structure levels (an upgraded city counts each level) within 0.8 SAM range not yet covered, while a non-friend has a silo; the AI's SAM-per-city ratio is off
     mirvSave: 2, // bank gold for a MIRV only against a runaway (2x our land, 1.5x our power, wins within ~20 min) when our income affords it in time
     wildSize: 1.5, // boats into empty land carry 1.5x what that land costs, not a fifth of our army
     postSpread: 1.5, // AI defense posts never inside another post's cover (overlap adds no defense)
+    mirvDump: 0.05, // an enemy MIRV flying at our land leaves ~3% of max troops anyway: pour troops above 5% into free land, tribes we outnumber 2x, players we outnumber 4x (owner: never strong enemies)
     minKeep: 0.2, // hard floor: no attack or boat (kills included) leaves under 20% of max troops home (owner request)
     homeKeep: 0.3, // every attack/boat leaves max(30% of max troops, defense floor) + incoming attackers home; a kill may dip to the defense floor
     // play-only (no sim signal; kept per the transfer rule)

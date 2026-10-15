@@ -225,6 +225,9 @@ async function main() {
     }
   };
   const t0 = performance.now();
+  let maxSams = 0;
+  const mirvIds = new Set<number>();
+  const seenNukes = new Set<number>();
   for (let n = 0; n < ticks; n++) {
     curTick = n;
     const turn = { turnNumber: n, intents: pending.get(n) ?? [] };
@@ -259,7 +262,23 @@ async function main() {
       // Troop floor check (minKeep): how low the bot's own troops go.
       const me = real.game.playerByClientID(CLIENT);
       if (me?.isAlive()) {
+        maxSams = Math.max(maxSams, me.units(UnitType.SAMLauncher).length);
+        for (const u of real.game.units(UnitType.MIRV)) if (u.owner() === me) mirvIds.add(u.id());
         const ratio = me.troops() / real.game.config().maxTroops(me);
+        if (process.argv.includes("--trace")) {
+          // Every nuke aimed at our land (once), and every 10-tick troop drop of 3+ points of max.
+          for (const u of real.game.units(UnitType.AtomBomb, UnitType.HydrogenBomb, UnitType.MIRVWarhead, UnitType.MIRV)) {
+            const t = u.targetTile?.();
+            if (seenNukes.has(u.id()) || t === undefined || real.game.owner(t) !== me) continue;
+            seenNukes.add(u.id());
+            console.log(`  nuke tick ${n}: ${u.type()} from ${u.owner().name()} at ${real.game.x(t)},${real.game.y(t)}`);
+          }
+          if (lastRatio - ratio >= 0.03) {
+            const out = me.outgoingAttacks().reduce((a: number, x: any) => a + x.troops(), 0);
+            const boats = me.units(UnitType.TransportShip).reduce((a: number, x: any) => a + x.troops(), 0);
+            console.log(`  drop tick ${n}: ${(lastRatio * 100).toFixed(1)}% -> ${(ratio * 100).toFixed(1)}% tiles ${me.numTilesOwned()} out ${Math.round(out)} boats ${Math.round(boats)} gold ${me.gold()}`);
+          }
+        }
         const prevRatio = lastRatio;
         lastRatio = ratio;
         if (ratio < lowMin) {
@@ -289,6 +308,13 @@ async function main() {
           `alive ${me.isAlive()} | hashes ok ${compared} bad ${mismatches}` +
           (sy ? ` | mirror ${(sy.pct * 100).toFixed(1)}% owned ${(sy.owned * 100).toFixed(1)}% me ${sy.meShadow}/${sy.meReal}` : ""),
       );
+      if (process.argv.includes("--neighbors") && me.isAlive()) {
+        const nb = real.game.players().filter((p: any) => p !== me && p.isAlive() && me.sharesBorderWith(p));
+        console.log(
+          `  gold ${me.gold()} out ${me.outgoingAttacks().length} boats ${me.units(UnitType.TransportShip).length} | ` +
+            nb.map((p: any) => `${p.name()}(${p.type()[0]} ${p.numTilesOwned()}t ${Math.round(p.troops() / 1000)}k${me.isAlliedWith(p) ? " ally" : ""}${p.hasEmbargoAgainst?.(me) ? " emb" : ""})`).join(" "),
+        );
+      }
     }
   }
   await settle();
@@ -302,6 +328,7 @@ async function main() {
     const doomed = real.game.players().filter((p: any) => p.type() !== "BOT" && p.inDoomsdayClock?.()).length;
     console.log(`DOOMSDAY ours flagged ${me.inDoomsdayClock?.() ?? "n/a"}, players flagged ${doomed}, our land share ${((me.numTilesOwned() / real.game.numLandTiles()) * 100).toFixed(2)}%`);
   }
+  console.log(`SAMs (most at once) ${maxSams}, MIRVs launched ${mirvIds.size}`);
   console.log(`tribe attacks ${tribeAttacks}, snipe+ally ${snipeAllies}, ports owned ${me.units(UnitType.Port).length}, traitor ${me.isTraitor()}`);
   console.log(
     `RESULT tiles ${me.numTilesOwned()} alive ${me.isAlive()} hashes compared ${compared} mismatches ${mismatches} errors ${errors} real errors ${realErrors} tribe diplomacy ${tribeDiplomacy} (${secs}s)`,

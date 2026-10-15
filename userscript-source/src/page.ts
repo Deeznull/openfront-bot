@@ -34,14 +34,18 @@ interface Settings {
   turbo: boolean;
   farm: boolean;
   farmGames: number;
+  v?: number; // settings format: 2 = turbo off by default (0.5.3)
   x: number;
   y: number;
 }
 const SETTINGS_KEY = "ofbot.settings.v1";
 // x < 0: default spot at the top right, under the game's timer bar.
-const settings: Settings = { autoStart: false, emojis: false, team: true, share: true, turbo: true, farm: false, farmGames: 0, x: -1, y: 130 };
+const settings: Settings = { autoStart: false, emojis: false, team: true, share: true, turbo: false, farm: false, farmGames: 0, x: -1, y: 130 };
 try {
-  Object.assign(settings, JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? "{}"));
+  const stored = JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? "{}");
+  // Turbo was on by default before 0.5.3: turn it off once for everyone.
+  if (!(stored.v >= 2)) stored.turbo = false;
+  Object.assign(settings, stored, { v: 2 });
 } catch {
   /* private window / blocked storage: defaults */
 }
