@@ -26,6 +26,20 @@ describe("BotExecution selfDiff", () => {
     expect(bot.player).toBe(game.player("me"));
   });
 
+  test("a method swapped on the real game (the per-tick addExecution wrapper) reaches the behaviours", async () => {
+    const { game, bot } = await run(1);
+    const g = game as any;
+    const orig = g.addExecution;
+    const seen: string[] = [];
+    g.addExecution = () => seen.push("first");
+    bot.mg.addExecution();
+    g.addExecution = () => seen.push("second");
+    bot.mg.addExecution();
+    g.addExecution = orig;
+    expect(seen).toEqual(["first", "second"]);
+    expect(bot.mg.addExecution).toBe(bot.mg.addExecution);
+  });
+
   test("off: behaviours see the lobby difficulty", async () => {
     const { bot } = await run(0);
     expect(bot.mg.config().gameConfig().difficulty).toBe(Difficulty.Easy);

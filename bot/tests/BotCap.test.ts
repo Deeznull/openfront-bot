@@ -4,6 +4,8 @@ import { BotExecution, DEFAULT_PARAMS } from "@openfront/engine/execution/bot/Bo
 import { Game, Player } from "@openfront/engine/game/Game";
 import { describe, expect, test } from "vitest";
 import { setup } from "./util/Setup";
+import { AttackExecution } from "@openfront/engine/execution/AttackExecution";
+import { TransportShipExecution } from "@openfront/engine/execution/TransportShipExecution";
 
 function conquerRect(game: Game, p: Player, x0: number, y0: number, w: number, h: number) {
   for (let x = x0; x < x0 + w; x++) for (let y = y0; y < y0 + h; y++) p.conquer(game.ref(x, y));
@@ -801,6 +803,39 @@ describe("BotExecution port arms", () => {
     const off = await arm({});
     expect((off.bot as any).natEarly(2)).toBe(true);
     expect((off.bot as any).natEarly(3)).toBe(false);
+  });
+
+  test("holdWin: before holdWin minutes and within holdGap of the win line, no new land attacks or boats of ours", async () => {
+    const s = await arm({ holdWin: 32, holdGap: 8 });
+    let sec = 600;
+    let tiles = 700;
+    (s.game as any).elapsedGameSeconds = () => sec;
+    (s.game as any).numLandTiles = () => 1000;
+    (s.game as any).numTilesWithFallout = () => 0;
+    (s.me as any).numTilesOwned = () => tiles;
+    const bot = s.bot as any;
+    expect(bot.holdOn(s.me)).toBe(false); // 70% < 80 - 8
+    tiles = 720;
+    expect(bot.holdOn(s.me)).toBe(true);
+    const atk = Object.assign(Object.create(AttackExecution.prototype), { _owner: s.me });
+    const boat = Object.assign(Object.create(TransportShipExecution.prototype), { attacker: s.me });
+    const theirs = Object.assign(Object.create(AttackExecution.prototype), { _owner: s.a });
+    bot.holding = true;
+    expect(bot.held(s.me, atk)).toBe(true);
+    expect(bot.held(s.me, boat)).toBe(true);
+    expect(bot.held(s.me, theirs)).toBe(false);
+    expect(bot.held(s.me, {})).toBe(false);
+    bot.holding = false;
+    expect(bot.held(s.me, atk)).toBe(false);
+    sec = 32 * 60;
+    expect(bot.holdOn(s.me)).toBe(false); // past holdWin: win freely
+    (s.game as any).numTilesWithFallout = () => 100; // fallout shrinks the land
+    sec = 600;
+    tiles = 650;
+    expect(bot.holdOn(s.me)).toBe(true); // 650 >= 900 x 72%
+    const off = await arm({});
+    (off.me as any).numTilesOwned = () => 1_000_000;
+    expect((off.bot as any).holdOn(off.me)).toBe(false);
   });
 
   test("doomAware: under the coming bar we grab free land; nothing as leader, above the bar or with the clock off", async () => {

@@ -35,6 +35,7 @@ interface Settings {
   turbo: boolean;
   farm: boolean;
   farmGames: number;
+  farmPublic: boolean; // farm: public FFA games once the day's XP solo games are used
   min: boolean; // panel collapsed to its header
   opts: boolean; // options (checkboxes) folded away
   v?: number; // settings format: 2 = turbo off by default (0.5.3)
@@ -43,7 +44,7 @@ interface Settings {
 }
 const SETTINGS_KEY = "ofbot.settings.v1";
 // x < 0: default spot at the top right, under the game's timer bar.
-const settings: Settings = { autoStart: false, emojis: false, team: true, share: true, turbo: false, farm: false, farmGames: 0, min: false, opts: false, x: -1, y: 130 };
+const settings: Settings = { autoStart: false, emojis: false, team: true, share: true, turbo: false, farm: false, farmGames: 0, farmPublic: true, min: false, opts: false, x: -1, y: 130 };
 try {
   const stored = JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? "{}");
   // Turbo was on by default before 0.5.3: turn it off once for everyone.
@@ -258,7 +259,8 @@ function onInit(w: Worker, realPost: GameCtx["realPost"], init: any) {
     note(reason);
     return;
   }
-  if (settings.autoStart || (settings.farm && gameType === "Singleplayer")) botOn = true;
+  if (settings.autoStart || (settings.farm && (gameType === "Singleplayer" || (gameType === "Public" && settings.farmPublic))))
+    botOn = true;
   startShadow(ctx, false);
   note(`${gameType} game detected — starting shadow engine`);
 }
@@ -486,6 +488,8 @@ const pid = (id: string) => ({ id: () => id });
 const ROUTES: Record<string, [string, (i: Intent) => any]> = {
   attack: ["onSendAttackIntent", (i) => ({ targetID: i.targetID, troops: i.troops })],
   boat: ["onSendBoatAttackIntent", (i) => ({ troops: i.troops, dst: i.dst })],
+  cancel_attack: ["onCancelAttackIntentEvent", (i) => ({ attackID: i.attackID })],
+  cancel_boat: ["onCancelBoatIntentEvent", (i) => ({ unitID: i.unitID })],
   build_unit: [
     "onBuildUnitIntent",
     (i) => ({ unit: i.unit, tile: i.tile, rocketDirectionUp: i.rocketDirectionUp, amount: i.amount }),
@@ -662,6 +666,35 @@ let farmDeadTitle: string | null = null;
 let farmDeadAt = 0;
 let farmStartAt = 0;
 
+// Solo XP (public progression config, read live 2026-10-15): only the first
+// singleplayerGamesPerDay (5) eligible solo games of a UTC day pay XP, and
+// Caps come only from level-ups. Past that the farm waits for the next day.
+let soloDaily: { day: string; games: number } | null = null;
+let soloPerDay = 5;
+let soloCapNoted = false;
+document.addEventListener("userMeResponse", (e: any) => {
+  const d = e?.detail?.player?.progress?.daily;
+  if (d && typeof d.day === "string" && Number.isFinite(Number(d.singleplayerGames))) {
+    soloDaily = { day: d.day, games: Number(d.singleplayerGames) };
+    render();
+  }
+});
+void fetch(`https://api.${location.hostname.replace(/^www\./, "")}/public/progression/config`)
+  .then((r) => r.json())
+  .then((c) => {
+    const n = Number(c?.xp?.singleplayerGamesPerDay);
+    if (n > 0) soloPerDay = n;
+  })
+  .catch(() => {
+    /* keep 5 */
+  });
+
+/** Today's XP-paying solo games, or null while unknown (signed out). */
+function soloToday(): number | null {
+  if (!soloDaily) return null;
+  return soloDaily.day === new Date().toISOString().slice(0, 10) ? soloDaily.games : 0;
+}
+
 function farmOnHome(): boolean {
   const p = location.pathname;
   return !ctx && (p === "/" || p === "" || p === "/index.html") && !/join|replay/i.test(location.hash + location.search);
@@ -721,6 +754,19 @@ function farmTick() {
   }
   const now = Date.now();
   if (farmOnHome()) {
+    farmAwayAt = 0;
+    const today = soloToday();
+    if (today !== null && today >= soloPerDay) {
+      farmStartAt = 0;
+      if (settings.farmPublic) {
+        farmJoinPublic(now);
+        return;
+      }
+      if (!soloCapNoted) note(`Farm: today's ${soloPerDay} XP solo games are done — waiting for 00:00 UTC`);
+      soloCapNoted = true;
+      return;
+    }
+    soloCapNoted = false;
     // A few seconds on the homepage first: time to uncheck Farm, and for the
     // page to finish loading its components.
     if (!farmStartAt) farmStartAt = now + 5000;
@@ -732,8 +778,22 @@ function farmTick() {
   }
   farmStartAt = 0;
   const c = ctx;
-  if (!c) farmGameAt = 0;
-  if (!c || !c.allowed || c.gameType !== "Singleplayer") return;
+  if (!c) {
+    farmGameAt = 0;
+    // Off the homepage with no game (a lobby that closed, a stray page):
+    // back home after a while. A lobby wait is left alone.
+    const sel = document.querySelector("game-mode-selector") as any;
+    if (sel?.inLobby) farmAwayAt = 0;
+    else if (!farmAwayAt) farmAwayAt = now;
+    else if (now - farmAwayAt > FARM_AWAY_MS) {
+      farmAwayAt = 0;
+      location.assign(`${location.origin}/`);
+    }
+    return;
+  }
+  farmAwayAt = 0;
+  if (c.allowed && c.gameType === "Public" && settings.farmPublic) return farmPublicTick(c, now);
+  if (!c.allowed || c.gameType !== "Singleplayer") return;
   if (farmGameAt === 0) farmGameAt = now;
   if (c.shadowReady) farmSpeedUp();
   const wm = document.querySelector("win-modal") as any;
@@ -759,6 +819,45 @@ function farmTick() {
 }
 setInterval(farmTick, 1000);
 
+// Public FFA (owner 2026-10-15: "best xp per second"). XP per game is
+// (50 played + 17 per game minute alive, up to 30 + placement + win) at 1x,
+// four times the solo rate and with no daily game limit, but in real time:
+// about 20 XP a minute against 30-45 for a held Max-speed solo game. So the
+// farm plays the day's XP solo games first and public games after. Time XP
+// counts alive time (the record keeps killedAt; the config's minAliveTicks),
+// and leaving after death forfeits nothing (only leaving alive does), so a
+// dead bot goes straight to the next lobby; alive, it plays the game out.
+const FARM_AWAY_MS = 5 * 60_000;
+const FARM_PUBLIC_MAX_MS = 3 * 60 * 60_000;
+let farmAwayAt = 0;
+let farmJoinAt = 0;
+
+function farmJoinPublic(now: number) {
+  const sel = document.querySelector("game-mode-selector") as any;
+  if (!sel || sel.inLobby || now < farmJoinAt) return;
+  const lobby = sel.lobbies?.games?.ffa?.[0];
+  if (!lobby || typeof sel.validateAndJoin !== "function") return;
+  farmJoinAt = now + 30_000; // retry if this join doesn't lead to a lobby
+  note(`Farm: today's ${soloPerDay} XP solo games are done — joining a public FFA lobby`);
+  try {
+    sel.validateAndJoin(lobby);
+  } catch (e) {
+    note(`Farm: couldn't join a public lobby (${String(e)})`);
+  }
+}
+
+function farmPublicTick(c: GameCtx, now: number) {
+  if (farmGameAt === 0) farmGameAt = now;
+  const wm = document.querySelector("win-modal") as any;
+  // The modal comes up on our death and at the game's end: either way
+  // there is no more XP to earn here.
+  if (farmEndAt === 0 && (wm?.isVisible || now - farmGameAt > FARM_PUBLIC_MAX_MS)) farmEndAt = now + FARM_WAIT_MS;
+  if (farmEndAt !== 0 && now >= farmEndAt) {
+    farmEndAt = farmGameAt = 0;
+    farmLeave();
+  }
+}
+
 
 let ui: {
   host: HTMLElement;
@@ -772,6 +871,7 @@ let ui: {
   share: HTMLInputElement;
   turbo: HTMLInputElement;
   farm: HTMLInputElement;
+  pub: HTMLInputElement;
 } | null = null;
 
 function buildUI() {
@@ -810,6 +910,7 @@ function buildUI() {
     <label><input type="checkbox" class="share"> Send/receive troops &amp; gold with them</label>
     <label title="Solo games at Max speed: start the next turn as soon as the last one is done"><input type="checkbox" class="turbo"> Turbo solo Max speed</label>
     <label title="Starts Easy solo games one after another, played by the bot at Max speed with turbo. Uncheck to stop."><input type="checkbox" class="farm"> Farm: Easy solo games on repeat</label>
+    <label title="Farm: once the day's XP-paying solo games are used, join public FFA games (the bot plays; next lobby after it dies or the game ends)"><input type="checkbox" class="pub"> …then public FFA games</label>
     </div>
     <div class="m"></div>
   </div>
@@ -829,6 +930,7 @@ function buildUI() {
     share: q(".share"),
     turbo: q(".turbo"),
     farm: q(".farm"),
+    pub: q(".pub"),
   };
   ui.team.checked = settings.team;
   ui.share.checked = settings.share;
@@ -852,6 +954,11 @@ function buildUI() {
     settings.farm = ui!.farm.checked;
     saveSettings();
     note(settings.farm ? "Farm on: Easy solo games on repeat" : "Farm off");
+  };
+  ui.pub.checked = settings.farmPublic;
+  ui.pub.onchange = () => {
+    settings.farmPublic = ui!.pub.checked;
+    saveSettings();
   };
   ui.auto.checked = settings.autoStart;
   ui.emo.checked = settings.emojis;
@@ -952,7 +1059,9 @@ function render() {
   ui.btn.disabled = blocked;
   ui.btn.textContent = blocked ? "Unavailable here" : botOn ? "Stop bot" : c ? "Start bot" : "Start bot (next game)";
   ui.btn.className = botOn && !blocked ? "on" : "";
-  ui.msg.textContent = (settings.farm ? `Farm on · ${settings.farmGames} done · ` : "") + lastMsg;
+  const today = soloToday();
+  const xpGames = today === null ? "" : ` · XP games today ${Math.min(today, soloPerDay)}/${soloPerDay}`;
+  ui.msg.textContent = (settings.farm ? `Farm on · ${settings.farmGames} done${xpGames} · ` : "") + lastMsg;
 }
 
 function fmt(n: number): string {

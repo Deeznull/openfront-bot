@@ -243,6 +243,8 @@ export function createShadow(post: Post, onPage = false) {
   // spaces new posts from them. Dropped once a post of ours stands within a
   // few tiles (the game may shift the spot), or after INFLIGHT_MS.
   let posts: { tile: number; at: number }[] = [];
+  // Attack ids ("boat<unit id>" for boats) already called back by the farm hold.
+  const recalled = new Set<string>();
   function landed(turn: any) {
     if (inflight.length === 0) return;
     for (const i of turn?.intents ?? []) {
@@ -360,6 +362,22 @@ export function createShadow(post: Post, onPage = false) {
         if ((i.type === "attack" || i.type === "boat") && typeof i.troops === "number" && i.troops > 0)
           inflight.push({ troops: i.troops, at: wall });
         if (i.type === "build_unit" && i.unit === UnitType.DefensePost) posts.push({ tile: i.tile, at: wall });
+      }
+    }
+    // Farm hold (holdWin): the bot sends no new attacks or boats near the win
+    // line, but the ones already running carried it from ~70% to the 80% win
+    // in under a game minute (sims 2026-10-15: wins at 14-20 min, not 30+).
+    // Call them back; retreating troops come home (a player target keeps 75%).
+    if ((bot as any).holding) {
+      for (const a of me.outgoingAttacks()) {
+        if (a.retreating() || recalled.has(a.id())) continue;
+        recalled.add(a.id());
+        intents.push({ type: "cancel_attack", attackID: a.id() });
+      }
+      for (const u of me.units(UnitType.TransportShip)) {
+        if (recalled.has(`boat${u.id()}`) || (u as any).retreating?.()) continue;
+        recalled.add(`boat${u.id()}`);
+        intents.push({ type: "cancel_boat", unitID: u.id() });
       }
     }
     if (intents.length > 0) post({ t: "intents", tick: g.ticks(), intents });
@@ -616,6 +634,7 @@ export function createShadow(post: Post, onPage = false) {
         turns.length = 0;
         inflight = [];
         posts = [];
+        recalled.clear();
         spawnSent = false;
         mirror = new Mirror(post, mySmallID);
         start(m.snapshot, true).catch((e) => post({ t: "error", msg: `shadow init failed: ${e?.message ?? e}` }));

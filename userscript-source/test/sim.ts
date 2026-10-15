@@ -226,6 +226,8 @@ async function main() {
   };
   const t0 = performance.now();
   let maxSams = 0;
+  let winAt = -1;
+  let earlyWin = false; // holdWin set, and we won before it
   const mirvIds = new Set<number>();
   const seenNukes = new Set<number>();
   for (let n = 0; n < ticks; n++) {
@@ -234,6 +236,20 @@ async function main() {
     pending.delete(n);
     real.addTurn(turn);
     real.executeNextTick();
+    if (winAt < 0 && real.game.getWinner?.()) {
+      // The game's own end (holdWin delays ours: solo XP pays per game minute).
+      winAt = n;
+      const w: any = real.game.getWinner();
+      console.log(`WINNER tick ${n} (${(n / 600).toFixed(1)} min): ${typeof w === "string" ? w : w.name()}${w === real.game.playerByClientID(CLIENT) ? " (us)" : ""}`);
+      // Held games must not end before holdWin (they may a little after: the
+      // hold lets go at holdWin and the bot needs a moment to reach the line).
+      const hw = Number((params as any)?.holdWin ?? 0);
+      if (hw > 0 && w === real.game.playerByClientID(CLIENT) && n < hw * 600) {
+        earlyWin = true;
+        console.log(`HOLD FAIL: won at ${(n / 600).toFixed(1)} min, holdWin ${hw}`);
+      }
+      if (process.argv.includes("--stopwin")) break;
+    }
     if (driftEvery && n % driftEvery === 0 && !real.game.inSpawnPhase()) {
       // Real-only change: the shadow never sees it except through the feed.
       const alive = real.game.players().filter((p: any) => p.isAlive());
@@ -257,6 +273,11 @@ async function main() {
       shadow({ t: "resync", snapshot: snap });
       while (ready < 2) await new Promise((r) => setTimeout(r, 10));
       console.log(`resynced at tick ${real.game.ticks()}`);
+    }
+    if (process.argv.includes("--early") && (n % 10 === 0 || (n >= 110 && n <= 145)) && n <= 400) {
+      // First ticks after spawn: our tiles, troops and attacks either way.
+      const me = real.game.playerByClientID(CLIENT);
+      if (me) console.log(`  early tick ${n}${real.game.inSpawnPhase() ? " (spawn)" : ""}: tiles ${me.numTilesOwned()} troops ${Math.round(me.troops())} out ${me.outgoingAttacks().map((a: any) => `${a.target().name?.() ?? "wild"}:${Math.round(a.troops())}`).join(",")} in ${me.incomingAttacks().map((a: any) => `${a.attacker().name()}:${Math.round(a.troops())}`).join(",")} spawnOwner ${me.spawnTile() === undefined ? "-" : (real.game.owner(me.spawnTile()) as any).name?.() ?? "wild"} alive ${me.isAlive()}`);
     }
     if (n % 10 === 0 && !real.game.inSpawnPhase()) {
       // Troop floor check (minKeep): how low the bot's own troops go.
@@ -304,7 +325,7 @@ async function main() {
       const me = real.game.playerByClientID(CLIENT)!;
       const sy = syncs[syncs.length - 1];
       console.log(
-        `min ${n / 600}: tiles ${me.numTilesOwned()} troops ${Math.round(me.troops())} ` +
+        `min ${n / 600}: tiles ${me.numTilesOwned()} (${((me.numTilesOwned() * 100) / Math.max(1, real.game.numLandTiles() - real.game.numTilesWithFallout())).toFixed(1)}% land) troops ${Math.round(me.troops())} ` +
           `alive ${me.isAlive()} | hashes ok ${compared} bad ${mismatches}` +
           (sy ? ` | mirror ${(sy.pct * 100).toFixed(1)}% owned ${(sy.owned * 100).toFixed(1)}% me ${sy.meShadow}/${sy.meReal}` : ""),
       );
@@ -367,7 +388,7 @@ async function main() {
     ? mirrorAt >= 0 && (lost === 0 || !correct)
     : mismatches === 0 && compared > 0 && diverged === 0 && (CAN_SNAPSHOT || lastFeed === "ok") && preOwnedMin === 1;
   const ok = synced && me.numTilesOwned() > 0 && errors === 0 && realErrors === 0 && tribeDiplomacy === 0 &&
-    !counts.breakAlliance && !me.isTraitor();
+    !counts.breakAlliance && !me.isTraitor() && !earlyWin;
   console.log(ok ? "PASS" : "FAIL");
   process.exit(ok ? 0 : 1);
 }

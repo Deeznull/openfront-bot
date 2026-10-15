@@ -192,6 +192,8 @@ export interface BotParams {
   renewLead: number; // >0 = send renewals only once <= renewLead seconds are left (inside the 30 s prompt window, so a late intent still lands in it); 0 = as soon as the window opens
   humanAccept: number; // 1 = graded accept of human requests (replay Q2): a traitor only if strong; a bordering human under 0.5x our tiles and not strong is room to grow, not an ally
   doomAware: number; // 1 = Doomsday Clock lobbies: when our land is (or within 60 s will be) under the bar and we are not the leader, grab land with the troops the drain would take anyway
+  holdWin: number; // >0 = no new land attacks or boats before this many game minutes once our land share is within holdGap points of the win line (solo farm: XP pays 17 per game minute up to 30, so an early win forfeits it)
+  holdGap: number; // percentage points under the win line where holdWin stops taking land
   natWin: number; // 1 = the early-game Nation ask limit (AL-027) lasts the Nations' own early-accept window for the lobby difficulty (Easy 5:00, Medium/Hard 3:00, Impossible 1:00 after spawn) instead of a flat 3:00
 }
 
@@ -358,6 +360,8 @@ export const DEFAULT_PARAMS: BotParams = {
   humanAccept: 0,
   doomAware: 0,
   natWin: 0,
+  holdWin: 0,
+  holdGap: 8,
 };
 
 /** Frozen best set (base5, 2026-10-13: tuned core + every adopted arm), used by solo autoplay and the userscript. */
@@ -432,16 +436,19 @@ const RING: readonly (readonly [number, number])[] = [
 // them from the game passed to init); executions they add run on the real game.
 function selfDiffGame(mg: Game): Game {
   const bind = <T extends object>(t: T, over: (k: PropertyKey) => unknown) => {
-    const cache = new Map<PropertyKey, unknown>();
+    // Bound methods are cached per function, not per name: the bot swaps
+    // g.addExecution for a filtering wrapper every tick, and a name-keyed cache
+    // kept the inherited AI on the first tick's wrapper for the whole game.
+    const cache = new Map<PropertyKey, { v: unknown; f: unknown }>();
     return new Proxy(t, {
       get(target, k) {
         const o = over(k);
         if (o !== undefined) return o;
         const v = Reflect.get(target, k, target);
         if (typeof v !== "function") return v;
-        let f = cache.get(k);
-        if (f === undefined) { f = v.bind(target); cache.set(k, f); }
-        return f;
+        let c = cache.get(k);
+        if (c === undefined || c.v !== v) { c = { v, f: v.bind(target) }; cache.set(k, c); }
+        return c.f;
       },
     });
   };
@@ -497,7 +504,8 @@ export class BotExecution extends NationExecution {
   // defence". Every send of ours passes keepHome() first.
   tick(ticks: number) {
     const me: Player | null = (this as any).player ?? null;
-    if ((this.params.homeKeep <= 0 && this.params.minKeep <= 0) || me === null) {
+    this.holding = me !== null && this.holdOn(me);
+    if (((this.params.homeKeep <= 0 && this.params.minKeep <= 0) && !this.holding) || me === null) {
       this.homePending = 0;
       return this.tickBody(ticks);
     }
@@ -505,12 +513,37 @@ export class BotExecution extends NationExecution {
     const orig = g.addExecution;
     this.homePending = 0;
     this.nukeHold = this.nukeLoss(me);
-    g.addExecution = (...exs: any[]) => orig.apply(g, exs.filter((e) => this.keepHome(me, e)));
+    g.addExecution = (...exs: any[]) => orig.apply(g, exs.filter((e) => !this.held(me, e) && this.keepHome(me, e)));
     try {
       this.tickBody(ticks);
     } finally {
       g.addExecution = orig;
     }
+  }
+
+  // holdWin (farm, owner 2026-10-15): solo XP is (50 + 17 per game minute up
+  // to 30 + win) x 0.25, so a 12-minute win pays about 60 and one at 30
+  // minutes about 144. Until holdWin minutes we take no more land once within
+  // holdGap points of the win line; attacks already running finish.
+  public holding = false;
+  public holdBlocked = 0;
+  private holdOn(me: Player): boolean {
+    if (this.params.holdWin <= 0) return false;
+    const g = this.botGame;
+    const sec = g.elapsedGameSeconds();
+    if (sec >= this.params.holdWin * 60) return false;
+    const land = g.numLandTiles() - g.numTilesWithFallout();
+    const line = g.config().percentageTilesOwnedToWin(sec) - this.params.holdGap;
+    return me.numTilesOwned() * 100 >= land * line;
+  }
+
+  private held(me: Player, e: unknown): boolean {
+    if (!this.holding) return false;
+    const x = e as any;
+    const mine =
+      (e instanceof AttackExecution && x._owner === me) || (e instanceof TransportShipExecution && x.attacker === me);
+    if (mine) this.holdBlocked++;
+    return mine;
   }
 
   public homeTrimmed = 0;
