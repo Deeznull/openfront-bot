@@ -68,9 +68,9 @@ Each test game is a full free-for-all on a random map from the online 30+ player
 | 80-125 players | 55 | 28 | ~51% | 1.0% | ~51x |
 | **All FFAs** | **200** | **99** | **~50%** | **1.92%** | **~26x** |
 | Default solo game (World, 72 nations, Impossible mode) | 200 | 23 | ~12% | 1.4% | ~8x |
-| Farm: default solo game on Easy (farm profile, held to 30+ game minutes) | 6 | 6 | 100% | - | - |
+| Farm: default solo game on Easy (farm profile, held to 30+ game minutes) | 10 | 10 | 100% | - | - |
 
-The farm games all ended in a win between 32 and 36 game minutes (6 test maps only).
+All 10 farm games ended in a win between 32 and 36 game minutes.
 
 The bot was not trained by reading or exploiting the Impossible AI's source code. The Impossible AI is only used as an opponent. The goal was strategy that also works against human players in online games.
 
