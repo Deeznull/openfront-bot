@@ -819,6 +819,25 @@ function farmTick() {
 }
 setInterval(farmTick, 1000);
 
+// Turbo solo also switches the game to Max speed once the bot runs (owner
+// 2026-10-16: turbo was ticked but the solo game stayed at normal speed).
+// A few presses once per game (Max is the top speed); after that the
+// player's own speed choice stands.
+let turboCtx: GameCtx | null = null;
+let turboPresses = 0;
+function turboTick() {
+  const c = ctx;
+  if (!settings.turbo || settings.farm || !c || !c.allowed || c.gameType !== "Singleplayer" || !c.shadowReady) return;
+  if (turboCtx !== c) {
+    turboCtx = c;
+    turboPresses = 0;
+  }
+  if (turboPresses >= 5) return;
+  turboPresses++;
+  farmSpeedUp();
+}
+setInterval(turboTick, 1000);
+
 // Public FFA (owner 2026-10-15: "best xp per second"). XP per game is
 // (50 played + 17 per game minute alive, up to 30 + placement + win) at 1x,
 // four times the solo rate and with no daily game limit, but in real time:
@@ -908,7 +927,7 @@ function buildUI() {
     <label><input type="checkbox" class="emo"> Bot may send emojis</label>
     <label><input type="checkbox" class="team"> Team up with other script bots</label>
     <label><input type="checkbox" class="share"> Send/receive troops &amp; gold with them</label>
-    <label title="Solo games at Max speed: start the next turn as soon as the last one is done"><input type="checkbox" class="turbo"> Turbo solo Max speed</label>
+    <label title="Solo games at Max speed: switches the game to Max once the bot runs and starts the next turn as soon as the last one is done"><input type="checkbox" class="turbo"> Turbo solo Max speed</label>
     <label title="Starts Easy solo games one after another, played by the bot at Max speed with turbo. Uncheck to stop."><input type="checkbox" class="farm"> Farm: Easy solo games on repeat</label>
     <label title="Farm: once the day's XP-paying solo games are used, join public FFA games (the bot plays; next lobby after it dies or the game ends)"><input type="checkbox" class="pub"> …then public FFA games</label>
     </div>
