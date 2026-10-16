@@ -148,6 +148,8 @@ export function createShadow(post: Post, onPage = false) {
     // 0.5.1 live-play fixes (owner reports 2026-10-14; quick sim on tf0-15)
     tribeFinish: 1, // finish tribes we hit, steal ones others hit (allies too), hunt early
     finishFloor: 0.6,
+    tribeCommit: 1, // 0.5.6 (owner 2026-10-16): a tribe we attacked is finished (counter push + kill, low commit floor)
+    playerSteal: 0.5, // 0.5.6 (owner 2026-10-16): steal the kill of a very low enemy/ex-ally/traitor ally others attack (other allies never); kill fits in 50% of our troops
     baitHuman: 1, // ally-bait boats only into humans no stronger than us
     structTarget: 0.5, // prefer neighbours whose cities/ports/factories our attack can reach
     // 0.5.2 live-play fixes (owner reports 2026-10-14; quick sim on tf0-15)

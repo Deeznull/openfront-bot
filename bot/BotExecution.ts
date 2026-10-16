@@ -147,6 +147,9 @@ export interface BotParams {
   tribeHunt: number; // 1 = kill any bordering tribe as soon as the kill fits above the expand floor (no waiting for the trigger ratio)
   tribeFinish: number; // 1 = finish every tribe we attacked (top up the running attack to the kill), kill-steal any bordering tribe someone else attacks (allies too), hunt a bordering tribe once its kill fits; replaces tribeSteal
   finishFloor: number; // tribeFinish keeps max(reserve, finishFloor x defense floor) x maxTroops at home
+  tribeCommit: number; // 1 = a tribe we attacked gets killed: its counter-push is answered with push + kill, and finish/top-up sends keep only max(minKeep, reserve, defense floor) home (not regenKeep/finishFloor)
+  playerSteal: number; // >0 = steal the kill of a bordering non-friendly player/nation others are killing (very low: < 1/4 of our troops, or < 15% of its max and < 1/2 of ours, and attacked by others); the kill must fit in playerSteal x our troops and above max(minKeep, reserve, defense floor);
+  //   allies only when they are traitors (alliance broken at the send), teammates never
   trigMax: number; // >0 = the attack trigger never needs more than this troop/max ratio (the defense floor then tops out at trigMax - 0.08); waiting for ~90% halves regen and idles the bot for minutes
   sendKeep: number; // >0 = on Hard/Impossible the inherited send cap keeps sendKeep (not 0.75/0.9) x the strongest non-friendly neighbour home
   regenKeep: number; // >0 = every tribe attack (Nation AI sends, boats, tribeFinish) keeps max(regenKeep, defense floor) x maxTroops at home; regen (10 + T^0.73/4)(1 - T/max) peaks near 0.42 max, ~94% of peak at 0.30, ~64% at 0.13
@@ -314,6 +317,8 @@ export const DEFAULT_PARAMS: BotParams = {
   tribeHunt: 0,
   tribeFinish: 0,
   finishFloor: 0.6,
+  tribeCommit: 0,
+  playerSteal: 0,
   regenKeep: 0,
   trigMax: 0,
   sendKeep: 0,
@@ -704,7 +709,9 @@ export class BotExecution extends NationExecution {
     const maxT = g.config().maxTroops(me);
     let incoming = 0;
     for (const a of me.incomingAttacks()) if (a.attacker() !== target) incoming += a.troops();
-    const kill = target !== null && send >= 2 * target.troops() && target.numTilesOwned() < 0.2 * me.numTilesOwned();
+    // tribeCommit: a tribe we already attacked keeps only the kill floor too (we finish it).
+    const kill = target !== null && ((send >= 2 * target.troops() && target.numTilesOwned() < 0.2 * me.numTilesOwned()) ||
+      (this.params.tribeCommit > 0 && target.type() === PlayerType.Bot && this.finTribes.has(target.id())));
     const self = this as any;
     const floor = self.reserveRatio ?? this.params.reserve;
     const frac = Math.max(this.params.minKeep, kill ? floor : Math.max(this.params.homeKeep, floor));
@@ -758,6 +765,7 @@ export class BotExecution extends NationExecution {
     if (this.params.dump > 0 && ticks % Math.max(5, Math.round(this.params.rate)) === 0) this.dumpSurplus();
     if (this.params.tribeFinish > 0) { if (ticks % 10 === 0) this.tribeFinish(ticks); }
     else if (this.params.tribeSteal > 0 && ticks % 10 === 0) this.tribeSteal(ticks);
+    if (this.params.playerSteal > 0 && ticks % 10 === 5) this.playerSteal(ticks);
     if (this.params.kin > 0) this.kinHandshake();
     if (this.params.clanKin > 0 && ticks % 50 === 7) this.clanKin();
     if (this.params.emojiMode > 0 && ticks % 10 === 5) this.allyEmojis(ticks);
@@ -1705,8 +1713,11 @@ export class BotExecution extends NationExecution {
     if (hit > 0.3 * troops) return;
     const maxT = g.config().maxTroops(me);
     const floor = Math.max(this.params.reserve, this.params.regenKeep, this.params.finishFloor * (self.reserveRatio ?? this.params.reserve));
-    const budget = troops - floor * maxT - hit;
-    if (budget <= 0) return;
+    const budget0 = troops - floor * maxT - hit;
+    // tribeCommit (owner 2026-10-16: "if bot starts killing a gray bot it should
+    // kill it"): a tribe we attacked is finished from the lower commit floor.
+    const budgetC = this.params.tribeCommit > 0 ? troops - this.commitFloor(me) * maxT - hit : budget0;
+    if (Math.max(budget0, budgetC) <= 0) return;
     let best: { o: Player; send: number; rank: number; kind: "steal" | "finish" | "topup" | "hunt" } | null = null;
     for (const n of me.nearby()) {
       if (!n.isPlayer()) continue;
@@ -1718,6 +1729,8 @@ export class BotExecution extends NationExecution {
       const running = cur.get(o.id()) ?? 0;
       const others = o.incomingAttacks().some((a) => a.attacker() !== me);
       const ours = this.finTribes.has(o.id());
+      const budget = running > 0 || ours ? Math.max(budget0, budgetC) : budget0;
+      if (budget <= 0) continue;
       let send = 0;
       let kind: "steal" | "finish" | "topup" | "hunt" = "hunt";
       if (running > 0) {
@@ -1744,6 +1757,65 @@ export class BotExecution extends NationExecution {
     this.finTribes.set(best.o.id(), ticks);
     this.fin[best.kind]++;
     if (this.fin.first < 0) this.fin.first = ticks;
+    g.addExecution(new AttackExecution(Math.ceil(best.send), me, best.o.id()));
+  }
+
+  private commitFloor(me: Player): number {
+    return Math.max(this.params.minKeep, this.params.reserve, (this as any).reserveRatio ?? this.params.reserve);
+  }
+
+  // Player/nation kill-steal (owner 2026-10-16: "it must also steal any
+  // player/nation kills from enemeis ... if its vulnerable. it shouldnt betray
+  // jsut to steal a kill"). Whoever's attack takes a player under 100 tiles
+  // annexes the rest and gets its gold (AttackExecution.handleDeadDefender,
+  // GameImpl.conquerPlayer). Every 10 ticks, at most one send, to a bordering
+  // non-friendly player (teammates never; allies only when they are traitors
+  // themselves; a former ally that broke with us is fair game) that others attack and whose troops are very low
+  // (< 1/4 of ours, or < 15% of its max while < 1/2 of ours). The send is the whole kill (killSend, player loss model), a top-up if
+  // our attack already runs; it must fit in playerSteal x our troops, above the
+  // commit floor + incoming, and in homeRoom (strongest other bordering player).
+  private pSent = new Map<string, number>();
+  public pSteals = 0;
+  private playerSteal(ticks: number) {
+    const me: Player | null = (this as any).player ?? null;
+    const g = this.botGame;
+    if (me === null || !me.isAlive() || g.inSpawnPhase()) return;
+    const troops = me.troops();
+    const inc = me.incomingAttacks().reduce((s, a) => s + a.troops(), 0);
+    if (inc > 0.3 * troops) return;
+    const maxT = g.config().maxTroops(me);
+    const budget = Math.min(troops - this.commitFloor(me) * maxT - inc, this.params.playerSteal * troops);
+    if (budget <= 0) return;
+    let best: { o: Player; send: number; need: number } | null = null;
+    for (const n of me.nearby()) {
+      if (!n.isPlayer()) continue;
+      const o = n as Player;
+      if (o.type() === PlayerType.Bot || !o.isAlive() || !me.sharesBorderWith(o) || me.isOnSameTeam(o)) continue;
+      // An ally only when it is a traitor itself (owner 2026-10-16: "current allies but
+      // betrayed someone is also eligable"); we break the alliance at the send.
+      if (me.isFriendly(o) && !(me.isAlliedWith(o) && o.isTraitor())) continue;
+      // Very low: under a quarter of us, or under 15% of its own max (owner 2026-10-16:
+      // "if an enemy or betrayed ally gets very low on troops and gets attacked").
+      if (o.troops() > 0.5 * troops || (o.troops() > 0.25 * troops && o.troops() > 0.15 * g.config().maxTroops(o))) continue;
+      if (ticks - (this.pSent.get(o.id()) ?? -1e9) < 30) continue;
+      let hitO = 0;
+      for (const a of o.incomingAttacks()) if (a.attacker() !== me) hitO += a.troops();
+      if (hitO <= 0) continue;
+      const need = this.killSend(o);
+      const running = me.outgoingAttacks().filter((a) => a.target() === o).reduce((s, a) => s + a.troops(), 0);
+      if (running >= 0.8 * need) continue;
+      const send = need - running;
+      if (send > budget || send > this.homeRoom(me, o)) continue;
+      if (best === null || need < best.need) best = { o, send, need };
+    }
+    if (best === null) return;
+    this.pSent.set(best.o.id(), ticks);
+    if (me.isAlliedWith(best.o)) {
+      const a = me.allianceWith(best.o);
+      if (a) me.breakAlliance(a);
+    }
+    if (!me.canAttackPlayer(best.o)) return;
+    this.pSteals++;
     g.addExecution(new AttackExecution(Math.ceil(best.send), me, best.o.id()));
   }
 
@@ -1797,7 +1869,8 @@ export class BotExecution extends NationExecution {
       mag += tt === TerrainType.Mountain ? 120 : tt === TerrainType.Highland ? 100 : 80;
       if (++k >= 64) break;
     }
-    mag = k > 0 ? (0.7 * mag) / k : 56;
+    const bot = o.type() === PlayerType.Bot ? 0.7 : 1; // BOT_DEFENDER_LOSS_MULT only vs tribes
+    mag = k > 0 ? (bot * mag) / k : 80 * bot;
     const base = 0.463 + 0.0039 * d;
     const ok = (a0: number) => {
       let a = a0;
@@ -3188,8 +3261,12 @@ export class BotExecution extends NationExecution {
         if (ticks - (this.lastCounter.get(x.id()) ?? -1e9) < 50) continue;
         // With tribeKill the rest is the full kill when it fits; else nothing (1, a half attack
         // stalls in its land) or the usual top-up (2).
-        const kill = this.params.tribeKill > 0 && pressure <= 0.2 * me.troops() ? this.killSend(x) : 0;
-        const fits = kill > 0 && a.troops() + kill <= left - floor;
+        // tribeCommit: a tribe we attacked that pushes everything at us has an empty home;
+        // the counter takes the kill when it fits above the commit floor.
+        const commit = this.params.tribeCommit > 0 && this.finTribes.has(x.id()) && pressure <= 0.2 * me.troops();
+        const kill = (this.params.tribeKill > 0 && pressure <= 0.2 * me.troops()) || commit ? this.killSend(x) : 0;
+        const kFloor = commit ? Math.max(floor, this.commitFloor(me) * this.botGame.config().maxTroops(me)) : floor;
+        const fits = kill > 0 && a.troops() + kill <= left - kFloor;
         const rest = pressure > 0.2 * me.troops() ? 0 : fits ? kill : this.params.tribeKill === 1 ? 0 : this.params.stealK * x.troops();
         const want = a.troops() + rest;
         const send = Math.min(want, left - floor);
