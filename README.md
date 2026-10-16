@@ -55,15 +55,18 @@ Tips:
 - Never let the agent play games itself in real time; it should only run the scripts.
 
 ## Results
-Each test game is a full free-for-all on a random map from the online 30+ player lobby mix (30-125 players). The 30+ limit follows TrackerFront, whose FFA win leaderboards count only lobbies of 30+ players. Every other player slot is the game's **Impossible** AI. The map's nations and tribes are added as in online lobbies. The table is the final test of bot version 0.5.0: 200 games on seeds never used in training, run once.
+Each test game is a full free-for-all on a random map from the online 30+ player lobby mix (30-125 players). The 30+ limit follows TrackerFront, whose FFA win leaderboards count only lobbies of 30+ players. Every other player slot is the game's **Impossible** AI. The map's nations and tribes are added as in online lobbies. The table is the final test of bot version 0.5.5 (general profile, the same as 0.5.4): 200 games on new seeds never used in training, run once. The 0.5.0 final test on the same kind of mix won 27 of 200 (~7x).
 
 | Lobby size | Games | Bot wins | Bot win rate | Impossible AI win rate | Bot vs Impossible |
 |---|---|---|---|---|---|
-| 30-49 players | 75 | 13 | ~17% | 2.8% | ~6x |
-| 50-79 players | 70 | 7 | 10% | 1.7% | ~6x |
-| 80-125 players | 55 | 7 | ~13% | 1.0% | ~12x |
-| **All FFAs** | **200** | **27** | **~14%** | **1.92%** | **~7x** |
-| Default solo game (World, 72 nations, Impossible mode) | 200 | 8 | 4% | 1.4% | ~3x |
+| 30-49 players | 75 | 41 | ~55% | 2.8% | ~20x |
+| 50-79 players | 70 | 30 | ~43% | 1.7% | ~25x |
+| 80-125 players | 55 | 28 | ~51% | 1.0% | ~51x |
+| **All FFAs** | **200** | **99** | **~50%** | **1.92%** | **~26x** |
+| Default solo game (World, 72 nations, Impossible mode) | 200 | 23 | ~12% | 1.4% | ~8x |
+| Farm: default solo game on Easy (farm profile, held to 30+ game minutes) | 6 | 6 | 100% | - | - |
+
+The farm games all ended in a win between 32 and 36 game minutes (6 test maps only).
 
 The bot was not trained by reading or exploiting the Impossible AI's source code. The Impossible AI is only used as an opponent. The goal was strategy that also works against human players in online games.
 
