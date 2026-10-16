@@ -22,7 +22,7 @@ This repository does not include the game's source code. The game can be downloa
 2. Open [`openfront-bot.user.js`](openfront-bot.user.js) and click the **Copy raw file** button. In Tampermonkey, choose **Create a new script**, replace everything in the editor with what you copied, and save (Ctrl+S).
 3. Open the game website, start or join a game (any mode) and press **Start bot** in the panel at the top right.
 
-- **Profiles:** the general profile plays online games. Solo games on Easy switch to a farm profile by themselves.
+- **Modes:** the general mode plays online games. Solo games on Easy switch to a farm mode by themselves.
 - **Farm option:** plays the 5 Easy solo games per UTC day that give XP, at Max speed, each held until 30+ game minutes for the most XP. Then it joins public FFA games; untick **…then public FFA games** to stop after the solo games.
 - **Panel:** **–/+** folds the panel; **Options** hides the checkboxes.
 
@@ -59,7 +59,7 @@ Tips:
 - Never let the agent play games itself in real time; it should only run the scripts.
 
 ## Results
-Each test game is a full free-for-all on a random map from the online 30+ player lobby mix (30-125 players). The 30+ limit follows TrackerFront, whose FFA win leaderboards count only lobbies of 30+ players. Every other player slot is the game's **Impossible** AI. The map's nations and tribes are added as in online lobbies. The table is the final test of bot version 0.5.5 (general profile, the same as 0.5.4): 200 games on new seeds never used in training, run once. The 0.5.0 final test on the same kind of mix won 27 of 200 (~7x).
+Each test game is a full free-for-all on a random map from the online 30+ player lobby mix (30-125 players). The 30+ limit follows TrackerFront, whose FFA win leaderboards count only lobbies of 30+ players. Every other player slot is the game's **Impossible** AI. The map's nations and tribes are added as in online lobbies. The table is the final test of bot version 0.5.5 (general mode, the same as 0.5.4): 200 games on new seeds never used in training, run once. The 0.5.0 final test on the same kind of mix won 27 of 200 (~7x).
 
 | Lobby size | Games | Bot wins | Bot win rate | Impossible AI win rate | Bot vs Impossible |
 |---|---|---|---|---|---|
@@ -68,7 +68,7 @@ Each test game is a full free-for-all on a random map from the online 30+ player
 | 80-125 players | 55 | 28 | ~51% | 1.0% | ~51x |
 | **All FFAs** | **200** | **99** | **~50%** | **1.92%** | **~26x** |
 | Default solo game (World, 72 nations, Impossible mode) | 200 | 23 | ~12% | 1.4% | ~8x |
-| Farm: default solo game on Easy (farm profile, held to 30+ game minutes) | 10 | 10 | 100% | - | - |
+| Farm: default solo game on Easy (farm mode, held to 30+ game minutes) | 10 | 10 | 100% | - | - |
 
 All 10 farm games ended in a win between 32 and 36 game minutes.
 
