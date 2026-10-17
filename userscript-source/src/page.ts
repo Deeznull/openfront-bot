@@ -32,24 +32,23 @@ interface Settings {
   emojis: boolean;
   team: boolean;
   share: boolean;
-  turbo: boolean;
-  farm: boolean;
+  farm: boolean; // also turbo: Max speed, next turn as soon as the last is done
   farmGames: number;
   farmPublic: boolean; // farm: public FFA games once the day's XP solo games are used
   min: boolean; // panel collapsed to its header
   opts: boolean; // options (checkboxes) folded away
-  v?: number; // settings format: 2 = turbo off by default (0.5.3)
+  v?: number; // settings format: 3 = no separate turbo option (farm has it)
   x: number;
   y: number;
 }
 const SETTINGS_KEY = "ofbot.settings.v1";
 // x < 0: default spot at the top right, under the game's timer bar.
-const settings: Settings = { autoStart: false, emojis: false, team: true, share: true, turbo: false, farm: false, farmGames: 0, farmPublic: true, min: false, opts: false, x: -1, y: 130 };
+const settings: Settings = { autoStart: false, emojis: false, team: true, share: true, farm: false, farmGames: 0, farmPublic: true, min: false, opts: false, x: -1, y: 130 };
 try {
   const stored = JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? "{}");
-  // Turbo was on by default before 0.5.3: turn it off once for everyone.
-  if (!(stored.v >= 2)) stored.turbo = false;
-  Object.assign(settings, stored, { v: 2 });
+  // Before 0.6.2 turbo was its own option; farm includes it now.
+  delete stored.turbo;
+  Object.assign(settings, stored, { v: 3 });
 } catch {
   /* private window / blocked storage: defaults */
 }
@@ -116,11 +115,11 @@ function note(msg: string) {
   render();
 }
 
-// ------------------------------------------------------------- solo turbo
+// ------------------------------------------------------------- solo turbo (farm)
 // Solo games (and replays) run on a local server that checks every 5 ms
 // whether the engine finished the last turn and, at Max speed, hands out the
 // next one. Browsers stretch that timer to >= 4 ms, and to once a second in a
-// background tab. Turbo runs the same check right after each engine message
+// background tab. Farm (turbo) runs the same check right after each engine message
 // (a MessageChannel task, which background tabs don't throttle), so at Max
 // the next turn starts as soon as the last one is done. The check itself
 // still decides: at the other speeds nothing changes. Multiplayer servers
@@ -151,7 +150,7 @@ W.clearInterval = (id?: any) => {
 };
 const kick = new MessageChannel();
 kick.port1.onmessage = () => {
-  if (!turnPoll || !(settings.turbo || settings.farm)) return;
+  if (!turnPoll || !settings.farm) return;
   const before = turnsPosted;
   try {
     turnPoll();
@@ -179,7 +178,7 @@ function shadowLagging(): boolean {
 }
 
 function kickTurn() {
-  if (!turnPoll || !(settings.turbo || settings.farm)) return;
+  if (!turnPoll || !settings.farm) return;
   kickAt = Date.now();
   kick.port2.postMessage(0);
 }
@@ -855,25 +854,6 @@ function farmTick() {
 }
 setInterval(farmTick, 1000);
 
-// Turbo solo also switches the game to Max speed once the bot runs (owner
-// 2026-10-16: turbo was ticked but the solo game stayed at normal speed).
-// A few presses once per game (Max is the top speed); after that the
-// player's own speed choice stands.
-let turboCtx: GameCtx | null = null;
-let turboPresses = 0;
-function turboTick() {
-  const c = ctx;
-  if (!settings.turbo || settings.farm || !c || !c.allowed || c.gameType !== "Singleplayer" || !c.shadowReady) return;
-  if (turboCtx !== c) {
-    turboCtx = c;
-    turboPresses = 0;
-  }
-  if (turboPresses >= 5) return;
-  turboPresses++;
-  farmSpeedUp();
-}
-setInterval(turboTick, 1000);
-
 // Public FFA (owner 2026-10-15: "best xp per second"). XP per game is
 // (50 played + 17 per game minute alive, up to 30 + placement + win) at 1x,
 // four times the solo rate and with no daily game limit, but in real time:
@@ -924,7 +904,6 @@ let ui: {
   emo: HTMLInputElement;
   team: HTMLInputElement;
   share: HTMLInputElement;
-  turbo: HTMLInputElement;
   farm: HTMLInputElement;
   pub: HTMLInputElement;
 } | null = null;
@@ -963,7 +942,6 @@ function buildUI() {
     <label><input type="checkbox" class="emo"> Bot may send emojis</label>
     <label><input type="checkbox" class="team"> Team up with other script bots</label>
     <label><input type="checkbox" class="share"> Send/receive troops &amp; gold with them</label>
-    <label title="Solo games at Max speed: switches the game to Max once the bot runs and starts the next turn as soon as the last one is done"><input type="checkbox" class="turbo"> Turbo solo Max speed</label>
     <label title="Starts Easy solo games one after another, played by the bot at Max speed with turbo. Uncheck to stop."><input type="checkbox" class="farm"> Farm: Easy solo games on repeat</label>
     <label title="Farm: once the day's XP-paying solo games are used, join public FFA games (the bot plays; next lobby after it dies or the game ends)"><input type="checkbox" class="pub"> …then public FFA games</label>
     </div>
@@ -983,7 +961,6 @@ function buildUI() {
     emo: q(".emo"),
     team: q(".team"),
     share: q(".share"),
-    turbo: q(".turbo"),
     farm: q(".farm"),
     pub: q(".pub"),
   };
@@ -998,11 +975,6 @@ function buildUI() {
     settings.share = ui!.share.checked;
     saveSettings();
     pushEnable();
-  };
-  ui.turbo.checked = settings.turbo;
-  ui.turbo.onchange = () => {
-    settings.turbo = ui!.turbo.checked;
-    saveSettings();
   };
   ui.farm.checked = settings.farm;
   ui.farm.onchange = () => {

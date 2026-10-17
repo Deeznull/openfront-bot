@@ -25,11 +25,11 @@ Tampermonkey's **Dashboard → Utilities → Import from file**.
      reads "Start bot (next game)" and arms the bot for the next game.
    - **Auto-start in each game** keeps the bot on for every allowed game.
    - **Bot may send emojis** is off by default.
-   - **Turbo solo Max speed** (off by default): in solo games at Max speed the
-     next turn starts as soon as the last one is done, also in a background tab.
    - **Farm: Easy solo games on repeat** (off by default): from the homepage it
-     starts an Easy solo game, the bot plays it at Max speed, and after the game
-     ends it goes home and starts the next one. The panel counts the games.
+     starts an Easy solo game, the bot plays it at Max speed with turbo (the
+     next turn starts as soon as the last one is done, also in a background
+     tab), and after the game ends it goes home and starts the next one. The
+     panel counts the games.
    - The panel can be dragged and collapsed. Its settings are saved in
      `localStorage`.
 
