@@ -85,6 +85,9 @@ interface GameCtx {
   realHashes: Map<number, number>;
   shadowHashes: Map<number, number>;
   syncedTick: number;
+  realTick: number; // last hash tick of the real game
+  shadowTick: number; // last tick the shadow (and so the bot) has played
+  shadowSeenAt: number; // wall time the shadow last advanced
   resyncing: boolean;
   snapId: string | null;
   canSnapshot: boolean;
@@ -129,12 +132,18 @@ let kickAt = 0;
 const realSetInterval = W.setInterval.bind(W);
 const realClearInterval = W.clearInterval.bind(W);
 W.setInterval = (fn: any, ms?: number, ...args: any[]) => {
-  const id = realSetInterval(fn, ms, ...args);
   if (ms === 5 && typeof fn === "function" && /replaySpeedMultiplier|turnIntervalMs/.test(String(fn))) {
-    turnPoll = fn;
+    // The local server's turn check: no new turn while the bot's shadow lags.
+    const gated = function (this: any, ...a: any[]) {
+      if (shadowLagging()) return;
+      return fn.apply(this, a);
+    };
+    const id = realSetInterval(gated, ms, ...args);
+    turnPoll = gated;
     turnPollId = id;
+    return id;
   }
-  return id;
+  return realSetInterval(fn, ms, ...args);
 };
 W.clearInterval = (id?: any) => {
   if (id !== undefined && id === turnPollId) turnPoll = turnPollId = null;
@@ -153,6 +162,22 @@ kick.port1.onmessage = () => {
   // The check wants a new millisecond; retry briefly instead of waiting 4 ms.
   if (turnsPosted === before && Date.now() - kickAt < 2) kick.port2.postMessage(0);
 };
+// Solo pacing (live 2026-10-17: an Easy farm game at Max speed ran 16 game
+// minutes ahead of the shadow, so the bot played a stale game, banked 290M
+// gold and lost). The local server hands out no new turn while the real game
+// is more than SHADOW_MAX_LAG ticks ahead of the shadow; the game waits for
+// the bot instead of leaving it behind. Multiplayer servers pace themselves.
+const SHADOW_MAX_LAG = 60; // ticks (6 s of game time)
+const SHADOW_STALL_MS = 15_000;
+function shadowLagging(): boolean {
+  const c = ctx;
+  if (!c || !botOn || !c.allowed || c.gameType !== "Singleplayer") return false;
+  if (!c.shadowReady || c.mirror || c.lost || c.resyncing || c.realTick < 0) return false;
+  // A shadow that stopped advancing (crashed worker) must not freeze the game.
+  if (Date.now() - c.shadowSeenAt > SHADOW_STALL_MS) return false;
+  return c.realTick - c.shadowTick > SHADOW_MAX_LAG;
+}
+
 function kickTurn() {
   if (!turnPoll || !(settings.turbo || settings.farm)) return;
   kickAt = Date.now();
@@ -239,6 +264,9 @@ function onInit(w: Worker, realPost: GameCtx["realPost"], init: any) {
     realHashes: new Map(),
     shadowHashes: new Map(),
     syncedTick: -1,
+    realTick: -1,
+    shadowTick: -1,
+    shadowSeenAt: 0,
     resyncing: false,
     snapId: null,
     canSnapshot: false,
@@ -354,6 +382,7 @@ function onRealMessage(data: any) {
     const list: FeedEntry[] = [];
     for (const gu of gus) {
       for (const h of findHashes(gu, HASH)) {
+        c.realTick = Math.max(c.realTick, h.tick);
         c.realHashes.set(h.tick, h.hash);
         compare(c, h.tick);
       }
@@ -443,6 +472,7 @@ function onShadowMessage(c: GameCtx, m: any) {
       pushEnable();
       break;
     case "hash":
+      if (m.tick > c.shadowTick) { c.shadowTick = m.tick; c.shadowSeenAt = Date.now(); }
       c.shadowHashes.set(m.tick, m.hash);
       compare(c, m.tick);
       break;
@@ -453,6 +483,7 @@ function onShadowMessage(c: GameCtx, m: any) {
       if (c.gameType === "Singleplayer") pump();
       break;
     case "state":
+      if (Number.isFinite(m.tick) && m.tick > c.shadowTick) { c.shadowTick = m.tick; c.shadowSeenAt = Date.now(); }
       c.stats = m;
       render();
       break;
@@ -659,7 +690,8 @@ function setBot(on: boolean) {
 // settings stay), let the bot play it at Max speed with turbo, and after the
 // game ends go back home and start the next one. Unchecking stops the loop.
 const FARM_WAIT_MS = 10_000; // after the end: let the game record upload
-const FARM_MAX_MS = 60 * 60_000; // a game that never ends is left after this
+const FARM_MAX_MS = 90 * 60_000; // a game that never ends is left after this
+const FARM_MAX_TICKS = 50 * 600; // owner 2026-10-17: leave a solo game after 50 game minutes
 let farmGameAt = 0;
 let farmEndAt = 0;
 let farmDeadTitle: string | null = null;
@@ -811,6 +843,10 @@ function farmTick() {
     }
     if (farmDeadTitle !== null && now - farmDeadAt > 5 * 60_000) farmEndAt = now;
     if (now - farmGameAt > FARM_MAX_MS) farmEndAt = now;
+    if (c.realTick >= FARM_MAX_TICKS) {
+      note("Farm: 50 game minutes passed — leaving for a new game");
+      farmEndAt = now;
+    }
   } else if (now >= farmEndAt) {
     farmEndAt = farmGameAt = 0;
     farmDeadTitle = null;
@@ -1064,7 +1100,7 @@ function render() {
     const p = c.sync?.mirror && c.sync.pct !== undefined ? ` ${Math.floor(c.sync.pct * 100)}% in sync` : "";
     status = `${c.gameType}: mirror mode,${p || " starting"}`;
   } else if (c.resyncing) status = `${c.gameType}: resyncing…`;
-  else status = `${c.gameType}: in sync${c.syncedTick >= 0 ? ` @ tick ${c.syncedTick}` : ""}`;
+  else status = `${c.gameType}: in sync${c.syncedTick >= 0 ? ` @ tick ${c.syncedTick}` : ""}${shadowLagging() ? " (game waits for the bot)" : ""}`;
   if (c?.allowed && c.farm) status += " · Easy farm profile";
   ui.status.textContent = status;
   const s = c?.stats;

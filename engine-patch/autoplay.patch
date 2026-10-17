@@ -67,7 +67,7 @@ index 2880e69c..2fe81484 100644
  function loadGameMap(
    config: Pick<GameStartInfo["config"], "gameMap" | "gameMapSize">,
 diff --git a/resources/lang/en.json b/resources/lang/en.json
-index 59e91353..0554cf51 100644
+index 455fc88d..1b57f0e8 100644
 --- a/resources/lang/en.json
 +++ b/resources/lang/en.json
 @@ -1001,6 +1001,7 @@

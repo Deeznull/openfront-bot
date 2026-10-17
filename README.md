@@ -8,7 +8,7 @@ This repository does not include the game's source code. The game can be downloa
 
 ## Contents
 - `openfront-bot.user.js`: the ready-to-install Tampermonkey script.
-- `bot/BotExecution.ts`: the bot (game version v0.35.0).
+- `bot/BotExecution.ts`: the bot (game version v0.35.2).
 - `bot/harness/`: headless game runner (`BotGame.ts`), stand-in opponents, evaluation and tuning scripts (`Eval.mjs`, `Tune.mjs`, `stats.mjs`).
 - `bot/tests/`: unit tests.
 - `bot/v34/`: the bot ported to game version v0.34.24.
@@ -26,11 +26,11 @@ This repository does not include the game's source code. The game can be downloa
 - **Farm option:** plays the 5 Easy solo games per UTC day that give XP, at Max speed, each held until 30+ game minutes for the most XP. Then it joins public FFA games; untick **…then public FFA games** to stop after the solo games.
 - **Panel:** **–/+** folds the panel; **Options** hides the checkboxes.
 
-The script is made for game version v0.35.0 (since script 0.6.0; older 0.5.x scripts were made for v0.34.24 and don't work on v0.35). On newer versions it keeps playing by following the live game, until a version changes too much; then it must be rebuilt (see `userscript-source/README.md`). Installed copies update themselves when a rebuilt script is pushed here.
+The script is made for game version v0.35.2 (since script 0.6.1; 0.6.0 was made for v0.35.0; older 0.5.x scripts were made for v0.34.24 and don't work on v0.35). On newer versions it keeps playing by following the live game, until a version changes too much; then it must be rebuilt (see `userscript-source/README.md`). Installed copies update themselves when a rebuilt script is pushed here.
 
 ## 2. Training
 ### Setup
-The game itself is open source, so setup downloads it from the official repository (tag `v0.35.0`) and adds the bot on top. Needs git, Node.js 24 and bash (Git Bash on Windows).
+The game itself is open source, so setup downloads it from the official repository (tag `v0.35.2`) and adds the bot on top. Needs git, Node.js 24 and bash (Git Bash on Windows).
 
 ```
 bash setup.sh

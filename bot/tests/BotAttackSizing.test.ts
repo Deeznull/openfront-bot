@@ -1032,6 +1032,68 @@ describe("BotExecution samCluster", () => {
   });
 });
 
+describe("BotExecution samSave", () => {
+  const due = async (samSave: number, gold: bigint) => {
+    const me = new PlayerInfo("me", PlayerType.Human, null, "me");
+    const en = new PlayerInfo("en", PlayerType.Human, null, "en");
+    const game = await setup("big_plains", {}, [me, en]);
+    const mp = game.player("me");
+    const ep = game.player("en");
+    conquerRect(game, mp, 0, 0, 200, 120);
+    conquerRect(game, ep, 0, 120, 200, 80);
+    ep.buildUnit(UnitType.MissileSilo, game.ref(100, 180), {});
+    const c = mp.buildUnit(UnitType.City, game.ref(50, 50), {});
+    for (let i = 0; i < 4; i++) c.increaseLevel();
+    mp.addGold(gold);
+    const bot = new BotExecution("ss", new Nation(undefined, me), { ...DEFAULT_PARAMS, samCluster: 5, samSave });
+    bot.init(game);
+    const b = bot as any;
+    b.player = mp;
+    const built: any[] = [];
+    vi.spyOn(game, "addExecution").mockImplementation((...e: any[]) => { built.push(...e); });
+    const calls: any[] = [];
+    const sb: any = { player: mp, maybeSpawnStructure: (t: any) => { calls.push(t); return true; } };
+    b.patchSam(sb);
+    return { game, b, sb, calls, built };
+  };
+
+  test("off: a short SAM holds nothing", async () => {
+    const { b, sb, calls, built } = await due(0, 500_000n);
+    b.samClusterTick(b.player);
+    expect(built.length).toBe(0);
+    expect(sb.maybeSpawnStructure(UnitType.City)).toBe(true);
+    expect(calls).toEqual([UnitType.City]);
+  });
+
+  test("a due SAM short of gold holds cities and ports, not posts, for samSave minutes", async () => {
+    const { game, b, sb, calls, built } = await due(2, 500_000n);
+    b.samClusterTick(b.player);
+    expect(built.length).toBe(0);
+    expect(sb.maybeSpawnStructure(UnitType.City)).toBe(false);
+    expect(sb.maybeSpawnStructure(UnitType.Port)).toBe(false);
+    expect(sb.maybeSpawnStructure(UnitType.DefensePost)).toBe(true);
+    expect(calls).toEqual([UnitType.DefensePost]);
+    expect(b.samHeld).toBe(2);
+    const t0 = game.ticks();
+    vi.spyOn(game, "ticks").mockReturnValue(t0 + 2 * 600 + 10);
+    b.samClusterTick(b.player);
+    expect(sb.maybeSpawnStructure(UnitType.City)).toBe(true); // waited long enough
+  });
+
+  test("the hold ends when the SAM is bought or no longer due", async () => {
+    const rich = await due(2, 100_000_000n);
+    rich.b.samClusterTick(rich.b.player);
+    expect(rich.built.length).toBe(1);
+    expect(rich.sb.maybeSpawnStructure(UnitType.City)).toBe(true);
+    const { game, b, sb } = await due(2, 500_000n);
+    b.samClusterTick(b.player);
+    expect(b.samHold()).toBe(true);
+    const t0 = game.ticks();
+    vi.spyOn(game, "ticks").mockReturnValue(t0 + 100); // not re-seen as due for > 60 ticks
+    expect(sb.maybeSpawnStructure(UnitType.City)).toBe(true);
+  });
+});
+
 describe("BotExecution wildSize", () => {
   test("an AI boat to a small wilderness carries only what the land costs", async () => {
     const me = new PlayerInfo("me", PlayerType.Human, null, "me");
@@ -1068,6 +1130,52 @@ describe("BotExecution wildSize", () => {
   });
 });
 
+
+describe("BotExecution killCap", () => {
+  // a kill send (>= 2x a small target's troops) keeps only the defense floor;
+  // killCap limits that to killCap x the target's troops for players.
+  async function kill(killCap: number, type: PlayerType) {
+    const me = new PlayerInfo("me", PlayerType.Human, null, "me");
+    const small = new PlayerInfo("s", type, null, "s");
+    const game = await setup("big_plains", {}, [me, small]);
+    const mp = game.player("me"), sp = game.player("s");
+    conquerRect(game, mp, 0, 0, 100, 100);
+    conquerRect(game, sp, 0, 100, 10, 10);
+    const bot = new BotExecution("kc", new Nation(undefined, me), { ...DEFAULT_PARAMS, homeKeep: 0.3, minKeep: 0, killCap });
+    bot.init(game);
+    const b = bot as any;
+    b.player = mp;
+    b.reserveRatio = 0.13;
+    const maxT = game.config().maxTroops(mp);
+    mp.setTroops(0.5 * maxT);
+    sp.setTroops(0.05 * maxT);
+    const got: any[] = [];
+    const add = vi.spyOn(game as any, "addExecution").mockImplementation((...ex: any[]) => { got.push(...ex); });
+    const body = vi.spyOn(b, "tickBody").mockImplementation(() => { game.addExecution(new AttackExecution(Math.round(0.3 * maxT), mp, sp.id())); });
+    bot.tick(game.ticks());
+    body.mockRestore();
+    add.mockRestore();
+    return { sent: got.map((e) => Math.round(e.startTroops)), maxT, mp, b };
+  }
+
+  test("off: a kill goes down to the defense floor", async () => {
+    const { sent, maxT } = await kill(0, PlayerType.Human);
+    expect(sent).toEqual([Math.round(0.3 * maxT)]);
+  });
+
+  test("on: the part above the full keep is capped at killCap x the target's troops", async () => {
+    const { sent, maxT, mp, b } = await kill(3, PlayerType.Human);
+    // floor room .37 > 3 x .05 = .15, so the full keep (.5 - .3 = .2) is the limit
+    expect(sent).toEqual([Math.floor(mp.troops() - 0.3 * maxT)]);
+    expect(b.killCapped).toBe(1);
+  });
+
+  test("tribes keep the whole kill exemption", async () => {
+    const { sent, maxT, b } = await kill(3, PlayerType.Bot);
+    expect(sent).toEqual([Math.round(0.3 * maxT)]);
+    expect(b.killCapped).toBe(0);
+  });
+});
 
 describe("BotExecution homeKeep", () => {
   async function world() {

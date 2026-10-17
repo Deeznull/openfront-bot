@@ -26,4 +26,4 @@ import type { BotParams } from "ofengine";
  * until 32 game minutes (2 spare for the spawn phase); at Max speed that
  * costs little wall time, and only 5 solo games a day pay XP anyway.
  */
-export const FARM_TWEAKS: Partial<BotParams> = { selfDiff: 1, tribeKill: 1, mirvSpend: 0.5, stackUp: 3, holdWin: 32 } as any;
+export const FARM_TWEAKS: Partial<BotParams> = { selfDiff: 1, tribeKill: 1, mirvSpend: 0.5, stackUp: 3, holdWin: 32, cityCap: 20 } as any;

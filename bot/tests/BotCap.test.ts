@@ -6,6 +6,8 @@ import { describe, expect, test } from "vitest";
 import { setup } from "./util/Setup";
 import { AttackExecution } from "@openfront/engine/execution/AttackExecution";
 import { TransportShipExecution } from "@openfront/engine/execution/TransportShipExecution";
+import { ConstructionExecution } from "@openfront/engine/execution/ConstructionExecution";
+import { UpgradeStructureExecution } from "@openfront/engine/execution/UpgradeStructureExecution";
 
 function conquerRect(game: Game, p: Player, x0: number, y0: number, w: number, h: number) {
   for (let x = x0; x < x0 + w; x++) for (let y = y0; y < y0 + h; y++) p.conquer(game.ref(x, y));
@@ -702,6 +704,32 @@ describe("BotExecution final gap arms", () => {
     expect((s.bot as any).richVetoes).toBe(1);
   });
 
+  test("nukeRisk: an armed silo owner needs a bigger edge unless our SAMs cover its silos", async () => {
+    const s = await arm({ pvpRatio: 1.2, nukeRisk: 1 });
+    s.me.setTroops(100_000);
+    s.a.setTroops(60_000);
+    let silos = 0, sams = 0, gold = 0n;
+    (s.a as any).unitCount = (t: any) => (t === UnitType.MissileSilo ? silos : 0);
+    (s.a as any).gold = () => gold;
+    (s.me as any).unitCount = (t: any) => (t === UnitType.SAMLauncher ? sams : 0);
+    const ab: any = { sendAttack: (t: Player) => t };
+    (s.bot as any).patchPvp(ab);
+    expect(ab.sendAttack(s.a)).toBe(s.a); // 1.67x >= 1.2, no silo
+    silos = 2;
+    gold = 1_000_000n; // atom gold only: 1.2 x 1.4 = 1.68 > 1.67
+    expect(ab.sendAttack(s.a)).toBe(false);
+    expect((s.bot as any).nukeRiskSkips).toBe(1);
+    sams = 1; // half cover: 1.2 x 1.2 = 1.44
+    expect(ab.sendAttack(s.a)).toBe(s.a);
+    gold = 10_000_000n; // hydrogen gold, half cover: 1.2 x 1.5 = 1.8
+    expect(ab.sendAttack(s.a)).toBe(false);
+    sams = 2; // full cover
+    expect(ab.sendAttack(s.a)).toBe(s.a);
+    sams = 0;
+    (s.me as any).incomingAttacks = () => [{ attacker: () => s.a, troops: () => 1000 }]; // it already hits us
+    expect(ab.sendAttack(s.a)).toBe(s.a);
+  });
+
   test("mirvBank: MIRV the leader when rich and safe, then land-attack after impact; 60 s cooldown", async () => {
     const s = await arm({ mirvBank: 1 });
     const fired: Player[] = [];
@@ -730,6 +758,39 @@ describe("BotExecution final gap arms", () => {
     (s.bot as any).mirvBankTick(9100);
     expect(fired.length).toBe(1); // cooldown
     expect((s.bot as any).mirvStrikes).toBe(1);
+  });
+
+  test("craterPush: after impact keep the attack on the target topped up, then free land; ends after craterPush minutes", async () => {
+    const s = await arm({ mirvBank: 1, craterPush: 1 });
+    (s.bot as any).mirvBehavior = { maybeSendMIRV: () => {} };
+    (s.me as any).unitCount = (t: any) => (t === UnitType.MissileSilo ? 1 : 0);
+    (s.me as any).gold = () => 100_000_000n;
+    (s.me as any).canBuild = (_t: any, tile: any) => tile;
+    (s.me as any).units = () => [];
+    s.a.setTroops(10_000);
+    (s.bot as any).mirvBankTick(9000); // fires
+    (s.bot as any).mirvBankTick(9030); // landed: the one 1.5x strike
+    expect(s.sent.length).toBe(1);
+    let out: any[] = [];
+    (s.me as any).outgoingAttacks = () => out;
+    (s.bot as any).freeLandNear = () => true;
+    (s.bot as any).homePending = 0;
+    (s.bot as any).craterTick(s.me, 9040);
+    // 100k spare: max(15k, 40k) at a, then 25% of the 60k left into free land
+    expect(s.sent.length).toBe(3);
+    expect(s.sent[1].startTroops ?? s.sent[1].troops).toBe(40_000);
+    expect(s.sent[2].startTroops ?? s.sent[2].troops).toBe(15_000);
+    (s.bot as any).homePending = 0;
+    (s.bot as any).craterTick(s.me, 9050);
+    expect(s.sent.length).toBe(3); // 3 s cooldown
+    out = [{ target: () => s.a, troops: () => 20_000 }, { target: () => ({ isPlayer: () => false }), troops: () => 1 }];
+    (s.bot as any).craterTick(s.me, 9080);
+    expect(s.sent.length).toBe(3); // already 2x its troops on the way, free land being taken
+    out = [];
+    (s.bot as any).craterTick(s.me, 9031 + 601);
+    expect(s.sent.length).toBe(3); // window over
+    expect((s.bot as any).craterR).toBeNull();
+    expect((s.bot as any).craterSends).toBe(2);
   });
 
   test("boatChain: one boat 10-30 s into a land attack on a weaker player; once per 60 s", async () => {
@@ -805,6 +866,34 @@ describe("BotExecution port arms", () => {
     expect((off.bot as any).natEarly(3)).toBe(false);
   });
 
+  test("cityCap: no City build/upgrade over max(cap, 2 x the next player's levels - 1)", async () => {
+    const s = await arm({ cityCap: 20 });
+    const bot = s.bot as any;
+    let mine = 20;
+    let theirs = 5;
+    (s.me as any).unitCount = (t: UnitType) => (t === UnitType.City ? mine : 0);
+    (s.a as any).unitCount = (t: UnitType) => (t === UnitType.City ? theirs : 0);
+    (s.me as any).units = (t: UnitType) => (t === UnitType.City ? [{ id: () => 42 }] : []);
+    (s.game as any).players = () => [s.me, s.a];
+    const build = new ConstructionExecution(s.me, UnitType.City, 0);
+    const up = new UpgradeStructureExecution(s.me, 42);
+    const port = new ConstructionExecution(s.me, UnitType.Port, 0);
+    const other = new UpgradeStructureExecution(s.me, 7);
+    expect(bot.cityCapped(s.me, build)).toBe(true); // 21 > max(20, 9)
+    expect(bot.cityCapped(s.me, up)).toBe(true);
+    expect(bot.cityCapped(s.me, port)).toBe(false);
+    expect(bot.cityCapped(s.me, other)).toBe(false); // not a City
+    mine = 19;
+    expect(bot.cityCapped(s.me, build)).toBe(false); // 20 levels: not over 20
+    mine = 30;
+    theirs = 16;
+    expect(bot.cityCapped(s.me, build)).toBe(false); // 31 < 2 x 16
+    theirs = 15;
+    expect(bot.cityCapped(s.me, build)).toBe(true); // 31 >= 2 x 15
+    const off = await arm({});
+    expect((off.bot as any).cityCapped(off.me, new ConstructionExecution(off.me, UnitType.City, 0))).toBe(false);
+  });
+
   test("holdWin: before holdWin minutes and within holdGap of the win line, no new land attacks or boats of ours", async () => {
     const s = await arm({ holdWin: 32, holdGap: 8 });
     let sec = 600;
@@ -833,6 +922,34 @@ describe("BotExecution port arms", () => {
     sec = 600;
     tiles = 650;
     expect(bot.holdOn(s.me)).toBe(true); // 650 >= 900 x 72%
+    // Team games: the team's land counts.
+    tiles = 550;
+    expect(bot.holdOn(s.me)).toBe(false);
+    (s.me as any).team = () => "Red";
+    (s.a as any).team = () => "Red";
+    (s.a as any).numTilesOwned = () => 100;
+    const realPlayers = s.game.players.bind(s.game);
+    (s.game as any).players = () => [s.me, s.a];
+    expect(bot.holdOn(s.me)).toBe(true); // 550 + 100 >= 648
+    (s.a as any).team = () => "Blue";
+    expect(bot.holdOn(s.me)).toBe(false);
+    (s.me as any).team = () => null;
+    (s.game as any).players = realPlayers;
+    tiles = 650;
+    // An enemy MIRV aimed at our land: holdBreak 0 (default) holds through it,
+    // holdBreak 1 ends the hold for good.
+    const mirv = { owner: () => s.a, targetTile: () => 7 };
+    const realUnits = s.game.units.bind(s.game);
+    const realOwner = s.game.owner.bind(s.game);
+    (s.game as any).units = (...t: any[]) => (t.includes(UnitType.MIRV) ? [mirv] : realUnits(...t));
+    (s.game as any).owner = (t: any) => (t === 7 ? s.me : realOwner(t));
+    expect(bot.holdOn(s.me)).toBe(true);
+    expect(bot.holdBroken).toBe(false);
+    bot.params.holdBreak = 1;
+    expect(bot.holdOn(s.me)).toBe(false);
+    (s.game as any).units = realUnits;
+    expect(bot.holdOn(s.me)).toBe(false); // stays broken
+    expect(bot.holdBroken).toBe(true);
     const off = await arm({});
     (off.me as any).numTilesOwned = () => 1_000_000;
     expect((off.bot as any).holdOn(off.me)).toBe(false);

@@ -59,7 +59,8 @@ async function main() {
     config: {
       gameMap,
       gameMapSize: GameMapSize.Normal,
-      gameMode: GameMode.FFA,
+      // --teams N: a Team solo game (N teams, nations fill them).
+      ...(process.argv.includes("--teams") ? { gameMode: GameMode.Team, playerTeams: Number(arg("teams", "2")) } : { gameMode: GameMode.FFA }),
       gameType: GameType.Singleplayer,
       difficulty,
       nations: "default",
@@ -229,6 +230,7 @@ async function main() {
   let winAt = -1;
   let earlyWin = false; // holdWin set, and we won before it
   const mirvIds = new Set<number>();
+  const enemyMirvs = new Set<number>();
   const seenNukes = new Set<number>();
   for (let n = 0; n < ticks; n++) {
     curTick = n;
@@ -240,7 +242,7 @@ async function main() {
       // The game's own end (holdWin delays ours: solo XP pays per game minute).
       winAt = n;
       const w: any = real.game.getWinner();
-      console.log(`WINNER tick ${n} (${(n / 600).toFixed(1)} min): ${typeof w === "string" ? w : w.name()}${w === real.game.playerByClientID(CLIENT) ? " (us)" : ""}`);
+      console.log(`WINNER tick ${n} (${(n / 600).toFixed(1)} min): ${typeof w === "string" ? w : w.name()}${w === real.game.playerByClientID(CLIENT) || (typeof w === "string" && w === real.game.playerByClientID(CLIENT)?.team()) ? " (us)" : ""}`);
       // Held games must not end before holdWin (they may a little after: the
       // hold lets go at holdWin and the bot needs a moment to reach the line).
       const hw = Number((params as any)?.holdWin ?? 0);
@@ -284,7 +286,17 @@ async function main() {
       const me = real.game.playerByClientID(CLIENT);
       if (me?.isAlive()) {
         maxSams = Math.max(maxSams, me.units(UnitType.SAMLauncher).length);
-        for (const u of real.game.units(UnitType.MIRV)) if (u.owner() === me) mirvIds.add(u.id());
+        for (const u of real.game.units(UnitType.MIRV)) {
+          if (u.owner() === me) { mirvIds.add(u.id()); continue; }
+          if (enemyMirvs.has(u.id())) continue;
+          enemyMirvs.add(u.id());
+          // Which NationMIRVBehavior trigger: victory denial (>= 75% of ALL land on
+          // Easy), steamroll (City levels > 20 and >= 2x the second), counter-MIRV.
+          const t = u.targetTile?.();
+          const cities = real.game.players().map((p: any) => p.unitCount(UnitType.City)).sort((a: number, b: number) => b - a);
+          console.log(`ENEMY MIRV tick ${n} (${(n / 600).toFixed(1)} min) by ${u.owner().name()} at ${t !== undefined && real.game.owner(t) === me ? "us" : "other"}: ` +
+            `our share of all land ${((me.numTilesOwned() * 100) / real.game.numLandTiles()).toFixed(1)}%, our City levels ${me.unitCount(UnitType.City)}, top ${cities.slice(0, 3).join("/")}, our MIRVs ${mirvIds.size}`);
+        }
         const ratio = me.troops() / real.game.config().maxTroops(me);
         if (process.argv.includes("--trace")) {
           // Every nuke aimed at our land (once), and every 10-tick troop drop of 3+ points of max.

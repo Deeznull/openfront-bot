@@ -274,6 +274,24 @@ export async function playGame(
 
   const land = game.numLandTiles();
   const meP = () => game.player(me.id);
+  // Trace: tag each of our attacks with the bot/AI methods that launched it (call stack).
+  if (trace) {
+    const origAdd = game.addExecution.bind(game);
+    (game as any).addExecution = (...es: any[]) => {
+      for (const e of es) {
+        if (!(e instanceof AttackExecution) || (e as any)._owner !== meP()) continue;
+        const src = (new Error().stack ?? "").split("\n").slice(2)
+          .map((l) => /at (?:[\w$]+\.)?([\w$<>]+) \(.*[\\/](\w+)\.ts:/.exec(l))
+          .filter((m) => m !== null && m[2] !== "BotGame" && m[2] !== "AttackExecution" && m[1] !== "addExecution")
+          .slice(0, 3).map((m) => `${m![2].replace(/Execution|Behavior/, "")}.${m![1]}`).join("<");
+        const tid = (e as any)._targetID;
+        const t = tid ? game.player(tid) : null;
+        const send = (e as any).startTroops;
+        console.error(`[atk ${(game.elapsedGameSeconds() / 60).toFixed(2)}m] ${t ? `${t.name()}(${t.type()[0]}${meP().isAlliedWith(t) ? ",ALLY" : ""}):${Math.round(t.troops() / 1000)}k` : "TN"} send=${send === null ? "def" : Math.round(send / 1000) + "k"} of ${Math.round(meP().troops() / 1000)}k src=${src}`);
+      }
+      return origAdd(...es);
+    };
+  }
   const majors = () =>
     game
       .allPlayers()
@@ -341,6 +359,7 @@ export async function playGame(
   const fineEvery = Number(arg("fineEvery", "10"));
   const nukeTypes = [UnitType.AtomBomb, UnitType.HydrogenBomb, UnitType.MIRV, UnitType.MIRVWarhead];
   const seenNukes = new Set<number>();
+  const nukesIn = { atom: 0, hydro: 0, mirv: 0, firstMirv: null as number | null };
   while (ci < CHECKPOINTS_MIN.length && game.elapsedGameSeconds() > CHECKPOINTS_MIN[ci] * 60) ci++;
   let snapped = false;
   let idleSec = 0; // seconds at >= 95% of max troops (idle at the cap)
@@ -397,13 +416,19 @@ export async function playGame(
       }
       console.error(`[t ${(sec / 60).toFixed(1)}m] tiles=${p.numTilesOwned()} troops=${Math.round(p.troops())}/${Math.round(game.config().maxTroops(p))} gold=${p.gold()} rank=${rankOfMe()} in=[${inc.join(",")}] out=[${out.join(",")}]`);
     }
-    if (trace) {
+    if (trace || game.ticks() % 10 === 0) {
       for (const q of game.allPlayers()) {
         for (const u of q.units(...nukeTypes)) {
           if (seenNukes.has(u.id())) continue;
           seenNukes.add(u.id());
           const tgt = u.targetTile();
           const victim = tgt !== undefined ? game.owner(tgt) : null;
+          if (victim === p && q !== p && u.type() !== UnitType.MIRVWarhead) {
+            const k = u.type() === UnitType.MIRV ? "mirv" : u.type() === UnitType.HydrogenBomb ? "hydro" : "atom";
+            nukesIn[k]++;
+            if (k === "mirv" && nukesIn.firstMirv === null) nukesIn.firstMirv = +(sec / 60).toFixed(1);
+          }
+          if (!trace) continue;
           const vName = victim && victim.isPlayer() ? (victim as any).name() : "-";
           if (u.type() !== UnitType.MIRVWarhead || vName === "Bot") {
             console.error(`[nuke ${(sec / 60).toFixed(2)}m] ${q.name()} ${u.type()} -> ${vName}`);
@@ -529,9 +554,9 @@ export async function playGame(
       hit: tribesHit.size, at10: tribes10, left: [...tribesHit.values()].filter((t) => t.isAlive()).length, fin: (bot as any).fin ?? null },
     boats: (bot as any).boatPicks ?? null,
     nukes: { sent: ((bot as any).nukeBehavior?.atomBombsLaunched ?? 0) + ((bot as any).nukeBehavior?.hydrogenBombsLaunched ?? 0),
-      counter: (bot as any).counterNukes ?? 0, lapse: (bot as any).lapseStrikes ?? 0, betray: (bot as any).betrayals ?? 0, traitor: (bot as any).traitorStrikes ?? 0,
+      counter: (bot as any).counterNukes ?? 0, lapse: (bot as any).lapseStrikes ?? 0, lapseGuarded: (bot as any).lapseGuarded ?? 0, siloGated: (bot as any).siloGated ?? 0, lapseCapped: (bot as any).lapseCapped ?? 0, samHeld: (bot as any).samHeld ?? 0, nukeRisk: (bot as any).nukeRiskSkips ?? 0, sams: (bot as any).samsBuilt ?? 0, boxStrong: (bot as any).boxStrongPicks ?? 0, betray: (bot as any).betrayals ?? 0, traitor: (bot as any).traitorStrikes ?? 0,
       posts: (bot as any).defPosts ?? 0, richV: (bot as any).richVetoes ?? 0, richR: (bot as any).richRedirects ?? 0,
-      mirv: (bot as any).mirvsSent ?? 0, mirvHit: (bot as any).mirvStrikes ?? 0, chain: (bot as any).chainBoats ?? 0 },
+      mirv: (bot as any).mirvsSent ?? 0, mirvPre: (bot as any).mirvPreFired ?? 0, killCapped: (bot as any).killCapped ?? 0, mirvHit: (bot as any).mirvStrikes ?? 0, chain: (bot as any).chainBoats ?? 0, in: nukesIn },
     gold: Number(p.gold()),
     goldK,
     captured,
