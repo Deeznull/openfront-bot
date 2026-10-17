@@ -197,6 +197,9 @@ export interface BotParams {
   doomAware: number; // 1 = Doomsday Clock lobbies: when our land is (or within 60 s will be) under the bar and we are not the leader, grab land with the troops the drain would take anyway
   holdWin: number; // >0 = no new land attacks or boats before this many game minutes once our land share is within holdGap points of the win line (solo farm: XP pays 17 per game minute up to 30, so an early win forfeits it)
   holdGap: number; // percentage points under the win line where holdWin stops taking land
+  medBreak: number; // >0 = Easy/Medium lobbies: hit a bordering Nation under 30% of its max troops (below every reserve ratio, so a Medium nation can't attack or retaliate) with up to medBreak x its troops
+  medR: number; // medBreak target: a Nation under medR x its max troops (default 0.3, under every Medium reserve ratio of 30-39%)
+  medDef: number; // >0 = Easy/Medium lobbies: in the defense floor a bordering Nation under 50% of its max (Medium trigger gate: it attacks on a 1-in-10 roll) counts medDef x its troops, under 30% half that
   natWin: number; // 1 = the early-game Nation ask limit (AL-027) lasts the Nations' own early-accept window for the lobby difficulty (Easy 5:00, Medium/Hard 3:00, Impossible 1:00 after spawn) instead of a flat 3:00
 }
 
@@ -367,6 +370,9 @@ export const DEFAULT_PARAMS: BotParams = {
   natWin: 0,
   holdWin: 0,
   holdGap: 8,
+  medBreak: 0,
+  medR: 0.3,
+  medDef: 0,
 };
 
 /** Frozen best set (base5, 2026-10-13: tuned core + every adopted arm), used by solo autoplay and the userscript. */
@@ -607,7 +613,7 @@ export class BotExecution extends NationExecution {
     const step = Math.max(1, Math.floor(border.length / 200));
     let free = false;
     for (let i = 0; i < border.length && !free; i += step) {
-      free = g.neighbors(border[i]).some((n) => g.isLand(n) && !g.hasOwner(n));
+      free = g.neighbors(border[i]).some((n) => g.isLand(n) && !g.isImpassable(n) && !g.hasOwner(n));
     }
     const weak: { p: Player; need: number }[] = [];
     for (const x of me.nearby()) {
@@ -657,6 +663,29 @@ export class BotExecution extends NationExecution {
   // posts protection intersects it doesnt make that 10x slowth".
   private patchPostSpread(sb: any) {
     sb.__spread = true;
+    if (typeof sb.findDefensePostTile === "function") {
+      // v0.35: the AI itself skips tiles within 1.5 post ranges of built posts;
+      // ours also keeps the pending ones (and a wider spread) apart.
+      const find = sb.findDefensePostTile.bind(sb);
+      sb.findDefensePostTile = (front: TileRef[], minDist: number, maxDist: number): TileRef | null => {
+        const t: TileRef | null = find(front, minDist, maxDist);
+        if (t === null) return null;
+        const g = this.botGame;
+        const r = this.params.postSpread * g.config().defensePostRange();
+        return this.postTiles(sb.player).every((p) => g.euclideanDistSquared(t, p) >= r * r) ? t : null;
+      };
+      const count = sb.countDefensePostsNearFront.bind(sb);
+      sb.countDefensePostsNearFront = (front: TileRef[], range: number, cap?: number): number => {
+        let n: number = count(front, range, cap);
+        if (this.pendingPosts.length === 0 || front.length === 0 || (cap !== undefined && n >= cap)) return n;
+        const g = this.botGame;
+        for (const p of this.pendingPosts) {
+          if (front.some((t) => g.euclideanDistSquared(t, p) <= range * range)) n++;
+        }
+        return cap === undefined ? n : Math.min(n, cap);
+      };
+      return;
+    }
     if (typeof sb.sampleTilesNearFront !== "function") return;
     const orig = sb.sampleTilesNearFront.bind(sb);
     sb.sampleTilesNearFront = (front: TileRef[], count: number, type: UnitType): TileRef[] => {
@@ -766,6 +795,7 @@ export class BotExecution extends NationExecution {
     if (this.params.tribeFinish > 0) { if (ticks % 10 === 0) this.tribeFinish(ticks); }
     else if (this.params.tribeSteal > 0 && ticks % 10 === 0) this.tribeSteal(ticks);
     if (this.params.playerSteal > 0 && ticks % 10 === 5) this.playerSteal(ticks);
+    if (this.params.medBreak > 0 && ticks % 10 === 1) this.medBreak(ticks);
     if (this.params.kin > 0) this.kinHandshake();
     if (this.params.clanKin > 0 && ticks % 50 === 7) this.clanKin();
     if (this.params.emojiMode > 0 && ticks % 10 === 5) this.allyEmojis(ticks);
@@ -850,7 +880,7 @@ export class BotExecution extends NationExecution {
       for (const e of exs) {
         if (!(e instanceof TransportShipExecution)) continue;
         const x = e as any;
-        if (x.attacker !== me || this.botGame.hasOwner(x.ref) || !this.botGame.isLand(x.ref)) continue;
+        if (x.attacker !== me || this.botGame.hasOwner(x.ref) || !this.botGame.isLand(x.ref) || this.botGame.isImpassable(x.ref)) continue;
         const need = this.wildNeed(x.ref);
         if (need !== null && need < x.troops) { x.troops = need; this.wildTrimmed++; }
       }
@@ -875,7 +905,7 @@ export class BotExecution extends NationExecution {
       cost += k === TerrainType.Mountain ? 24 : k === TerrainType.Highland ? 20 : 16;
       if (queue.length > 4000) return null;
       for (const n of map.neighbors(c)) {
-        if (seen.has(n) || !map.isLand(n) || g.hasOwner(n)) continue;
+        if (seen.has(n) || !map.isLand(n) || map.isImpassable(n) || g.hasOwner(n)) continue;
         seen.add(n);
         queue.push(n);
       }
@@ -991,7 +1021,7 @@ export class BotExecution extends NationExecution {
       for (const t of me.borderTiles()) {
         if (g.isShore(t)) shore.add(t);
         for (const n of g.neighbors(t)) {
-          if (!g.isLand(n)) continue;
+          if (!g.isLand(n) || g.isImpassable(n)) continue;
           const o = g.owner(n);
           if (o === me) continue;
           if (o.isPlayer() && me.isFriendly(o as Player)) continue;
@@ -1819,6 +1849,65 @@ export class BotExecution extends NationExecution {
     g.addExecution(new AttackExecution(Math.ceil(best.send), me, best.o.id()));
   }
 
+  // Easy/Medium lobbies (v0.35 AiAttackBehavior.attackBestTarget): under its
+  // reserve ratio (30-39% of max at every difficulty) a nation only attacks
+  // tribes that hold structures, and Medium retaliates only after that gate.
+  // Under its trigger ratio (50-59%) it attacks on a 1-in-10 roll per decision.
+  // The real game difficulty decides, not selfDiff's view; never Hard/Impossible.
+  private lowDiff(): boolean {
+    const d = this.botGame.config().gameConfig().difficulty;
+    return d === Difficulty.Easy || d === Difficulty.Medium;
+  }
+  private medWeight(o: Player): number {
+    if (this.params.medDef <= 0 || o.type() !== PlayerType.Nation || !this.lowDiff()) return 1;
+    const r = o.troops() / Math.max(1, this.botGame.config().maxTroops(o));
+    return r < 0.3 ? 0.5 * this.params.medDef : r < 0.5 ? this.params.medDef : 1;
+  }
+
+  // Reserve-break: every 10 ticks, at most one send to the weakest bordering
+  // non-friendly Nation under 30% of its max (it can't hit back): up to
+  // medBreak x its troops, from above the commit floor + incoming, within
+  // homeRoom and warOk (no other strong non-ally borders us), while nothing
+  // hits us hard. Graded: the send must reach 1.5x its troops (with our
+  // running attack) or it waits.
+  private mbSent = new Map<string, number>();
+  public medBreaks = 0;
+  public medSeen = 0;
+  public medWhy = [0, 0, 0, 0, 0, 0]; // diag: no budget, cooldown, want, send, warOk, canAttack
+  private medBreak(ticks: number) {
+    const me: Player | null = (this as any).player ?? null;
+    const g = this.botGame;
+    if (me === null || !me.isAlive() || g.inSpawnPhase() || !this.lowDiff()) return;
+    const troops = me.troops();
+    const inc = me.incomingAttacks().reduce((s, a) => s + a.troops(), 0);
+    if (inc > 0.2 * troops) return;
+    const budget = troops - this.commitFloor(me) * g.config().maxTroops(me) - inc;
+    let best: { o: Player; send: number; r: number } | null = null;
+    for (const n of me.nearby()) {
+      if (!n.isPlayer()) continue;
+      const o = n as Player;
+      if (o.type() !== PlayerType.Nation || !o.isAlive() || me.isFriendly(o) || me.isOnSameTeam(o) || !me.sharesBorderWith(o)) continue;
+      const r = o.troops() / Math.max(1, g.config().maxTroops(o));
+      if (r >= this.params.medR) continue;
+      this.medSeen++;
+      if (best !== null && r >= best.r) continue;
+      if (budget <= 0) { this.medWhy[0]++; continue; }
+      if (ticks - (this.mbSent.get(o.id()) ?? -1e9) < 50) { this.medWhy[1]++; continue; }
+      const running = me.outgoingAttacks().filter((a) => a.target() === o).reduce((s, a) => s + a.troops(), 0);
+      const want = this.params.medBreak * o.troops() - running;
+      if (want <= 0.25 * o.troops()) { this.medWhy[2]++; continue; }
+      const send = Math.min(want, budget, this.homeRoom(me, o));
+      if (send < Math.min(want, 1.5 * o.troops() - running)) { this.medWhy[3]++; continue; }
+      if (!this.warOk(me, o)) { this.medWhy[4]++; continue; }
+      best = { o, send, r };
+    }
+    if (best === null) return;
+    if (!me.canAttackPlayer(best.o)) { this.medWhy[5]++; return; }
+    this.mbSent.set(best.o.id(), ticks);
+    this.medBreaks++;
+    g.addExecution(new AttackExecution(Math.ceil(best.send), me, best.o.id()));
+  }
+
   // Counter incoming land attacks: our attack on the attacker cancels its
   // attack 1:1 and the rest hits its (now thinner) home (KNOWLEDGE S07/S09).
   private lastCounter = new Map<string, number>();
@@ -2424,7 +2513,7 @@ export class BotExecution extends NationExecution {
     const border = [...me.borderTiles()];
     const step = Math.max(1, Math.floor(border.length / 200));
     for (let i = 0; i < border.length && !free; i += step) {
-      free = g.neighbors(border[i]).some((n) => g.isLand(n) && !g.hasOwner(n));
+      free = g.neighbors(border[i]).some((n) => g.isLand(n) && !g.isImpassable(n) && !g.hasOwner(n));
     }
     let target: Player | null = null;
     if (!free) {
@@ -3131,7 +3220,7 @@ export class BotExecution extends NationExecution {
     };
     // Cost of one tile in plains-tile units.
     const tileW = (t: TileRef) => {
-      if (!g.isLand(t)) return 2;
+      if (!g.isLand(t) || g.isImpassable(t)) return 2;
       const o = g.ownerID(t);
       if (o === mid) return 0;
       if (o === pid) return magOf(t) * (covered(t) ? 5 : 1);
@@ -3536,8 +3625,9 @@ export class BotExecution extends NationExecution {
         if (t !== PlayerType.Nation && t !== PlayerType.Human) continue;
         if (o.isFriendly(me) && !this.allyEnding(me, o)) continue;
         if (!me.sharesBorderWith(o)) continue;
-        strongest = Math.max(strongest, o.troops());
-        total += o.troops();
+        const ot = this.medWeight(o) * o.troops();
+        strongest = Math.max(strongest, ot);
+        total += ot;
       }
     }
     // Deaths come mostly from 3-7 neighbours piling on at once (death2, split2).
@@ -3791,7 +3881,7 @@ export class BotExecution extends NationExecution {
     for (const b of kb) {
       if (++m > 2000 || seen.size > 200) break;
       for (const t of g.neighbors(b)) {
-        if (seen.has(t) || !g.isLand(t) || g.hasOwner(t) || !g.isShore(t)) continue;
+        if (seen.has(t) || !g.isLand(t) || g.isImpassable(t) || g.hasOwner(t) || !g.isShore(t)) continue;
         seen.add(t);
         const x0 = g.x(t), y0 = g.y(t);
         let land = 0, theirs = 0;
@@ -3799,7 +3889,7 @@ export class BotExecution extends NationExecution {
           for (let dy = -R + Math.abs(dx); dy <= R - Math.abs(dx); dy++) {
             if (!g.isValidCoord(x0 + dx, y0 + dy)) continue;
             const u = g.ref(x0 + dx, y0 + dy);
-            if (!g.isLand(u)) continue;
+            if (!g.isLand(u) || g.isImpassable(u)) continue;
             land++;
             if (g.ownerID(u) === kid) theirs++;
           }
@@ -3957,7 +4047,7 @@ export class BotExecution extends NationExecution {
         : area !== undefined
         ? map.ref(this.rng.nextInt(area.x, area.x + area.width), this.rng.nextInt(area.y, area.y + area.height))
         : map.ref(this.rng.nextInt(0, w), this.rng.nextInt(0, h));
-      if (!map.isLand(t) || map.hasOwner(t)) continue;
+      if (!map.isLand(t) || map.isImpassable(t) || map.hasOwner(t)) continue;
       const tx = map.x(t);
       const ty = map.y(t);
       // Next to a mate, not on top of it.
@@ -3979,6 +4069,7 @@ export class BotExecution extends NationExecution {
         const y = Math.round(ty + RING[k][1] * rad);
         if (x < 0 || y < 0 || x >= w || y >= h) continue;
         const s = map.ref(x, y);
+        if (map.isImpassable(s)) continue;
         if (!map.isLand(s)) {
           water = Math.max(water, (map.isOcean(s) ? 1 : 0.5) * (1 - (rad - 8) / 40));
           continue;

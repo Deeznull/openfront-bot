@@ -11,7 +11,7 @@
  * Medium, like online), 400 tribes (100 compact), overtime on, and every other
  * human slot is a StandInExecution (Human-type player driven by the Impossible
  * Nation AI). --roulette draws (map, players, compact) from the online 30+ FFA
- * mix (results/online-ffa-mix/ffa_cells.json) by seed. --bot us uses the
+ * mix (results/online-ffa-mix/ffa_cells_v035.json, v0.35 playlist) by seed. --bot us uses the
  * userscript bot (packages/engine/src/execution/bot) instead of tests/bot.
  *
  * Branching (mid/late-game tests from one shared state; needs --fast):
@@ -78,7 +78,7 @@ export interface Lobby {
 /** Deterministic draw of a lobby cell from the online 30+ FFA mix. */
 export function rouletteLobby(seed: string): Lobby {
   const cells: (Lobby & { w: number })[] = JSON.parse(
-    fs.readFileSync(path.join(PROJECT_ROOT, "../../results/online-ffa-mix/ffa_cells.json"), "utf8"),
+    fs.readFileSync(path.join(PROJECT_ROOT, "../../results/online-ffa-mix/ffa_cells_v035.json"), "utf8"),
   );
   let u = new PseudoRandom(simpleHash("roulette:" + seed)).nextInt(0, 1_000_000) / 1_000_000;
   for (const c of cells) {
@@ -521,6 +521,9 @@ export async function playGame(
     snipes: bot.snipesSent,
     grabs: bot.grabsSent,
     pirates: bot.piratesBuilt,
+    medBreaks: (bot as any).medBreaks ?? 0,
+    medSeen: (bot as any).medSeen ?? 0,
+    medWhy: (bot as any).medWhy ?? [],
     tribe: { kills: tribeKills, stalls: tribeStalls, sized: (bot as any).killsSized ?? 0, held: (bot as any).killsHeld ?? 0,
       steals: (bot as any).steals ?? 0, pvpSkips: (bot as any).pvpSkips ?? 0,
       hit: tribesHit.size, at10: tribes10, left: [...tribesHit.values()].filter((t) => t.isAlive()).length, fin: (bot as any).fin ?? null },

@@ -544,15 +544,20 @@ export function createShadow(post: Post, onPage = false) {
     const e: any = c.e;
     if (e instanceof AttackExecution) {
       if (e["_owner"] !== me) return null;
-      const troops = e["startTroops"];
-      return {
-        type: "attack",
-        targetID: e["_targetID"] ?? null,
-        troops: troops === null || troops === undefined ? null : Math.max(0, troops),
-      };
+      // v0.35 clients drop an attack whose troops aren't a finite number (null
+      // included), so a not-yet-sized send goes out with the engine's default.
+      let troops = e["startTroops"];
+      if (troops === null || troops === undefined) {
+        const tid = e["_targetID"];
+        const target = tid && g.hasPlayer(tid) ? g.player(tid) : g.terraNullius();
+        troops = Math.min(me.troops(), g.config().attackAmount(me, target));
+      }
+      if (!Number.isFinite(troops)) return null;
+      return { type: "attack", targetID: e["_targetID"] ?? null, troops: Math.max(0, troops) };
     }
     if (e instanceof TransportShipExecution) {
       if (e["attacker"] !== me) return null;
+      if (!Number.isFinite(e["troops"])) return null;
       return { type: "boat", troops: Math.max(0, e["troops"]), dst: e["ref"] };
     }
     if (e instanceof ConstructionExecution) {

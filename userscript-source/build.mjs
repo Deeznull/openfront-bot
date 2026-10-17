@@ -81,10 +81,12 @@ const shadow = await esbuild.build({ ...common, entryPoints: [path.join(here, "s
 const page = await esbuild.build({ ...common, entryPoints: [path.join(here, "src/page.ts")] });
 
 // One script per engine, each matching only the sites that run that engine:
-// the v34 build is for the live site, the main build for the fork and the dev
+// the live build (v34, or a main-layout engine built with --live, e.g. the
+// site's v0.35 tag) is for the live site, the main build for the fork and the dev
 // client. If both get installed anyway, the first to load wins (guard below).
+const live = kind === "v34" || process.argv.includes("--live");
 const target =
-  kind === "v34"
+  live
     ? {
         file: "openfront-bot-openfrontio.user.js",
         name: "OpenFront Bot",

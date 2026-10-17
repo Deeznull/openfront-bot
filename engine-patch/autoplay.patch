@@ -12,18 +12,18 @@ index c20a9cc8..2eb201ea 100644
    disableAlliances: z.boolean().nullable().optional(),
    disableClanTags: z.boolean().optional(),
 diff --git a/packages/engine/src/GameRunner.ts b/packages/engine/src/GameRunner.ts
-index a8e5faff..ec5a378e 100644
+index 2880e69c..2fe81484 100644
 --- a/packages/engine/src/GameRunner.ts
 +++ b/packages/engine/src/GameRunner.ts
-@@ -5,6 +5,7 @@ import {
-   GameType,
+@@ -6,6 +6,7 @@ import {
    GameUpdates,
+   HumanStatsSnapshot,
    NameViewData,
 +  Nation,
    PlayerActions,
    PlayerBorderTiles,
    PlayerBuildableUnitType,
-@@ -24,6 +25,7 @@ import { loadTerrainMap } from "@openfront/engine-lib/game/TerrainMapLoader";
+@@ -25,6 +26,7 @@ import { loadTerrainMap } from "@openfront/engine-lib/game/TerrainMapLoader";
  import { PseudoRandom } from "@openfront/engine-lib/PseudoRandom";
  import { simpleHash } from "@openfront/engine-lib/Util";
  import { EngineConfig } from "./configuration/EngineConfig";
@@ -31,7 +31,7 @@ index a8e5faff..ec5a378e 100644
  import { DoomsdayClockExecution } from "./execution/DoomsdayClockExecution";
  import { Executor } from "./execution/ExecutionManager";
  import { RecomputeRailClusterExecution } from "./execution/RecomputeRailClusterExecution";
-@@ -90,9 +92,34 @@ export async function createGameRunner(
+@@ -92,9 +94,34 @@ export async function createGameRunner(
      callBack,
    );
    gr.init();
@@ -67,10 +67,10 @@ index a8e5faff..ec5a378e 100644
  function loadGameMap(
    config: Pick<GameStartInfo["config"], "gameMap" | "gameMapSize">,
 diff --git a/resources/lang/en.json b/resources/lang/en.json
-index 01a06956..3bdfb999 100644
+index 59e91353..0554cf51 100644
 --- a/resources/lang/en.json
 +++ b/resources/lang/en.json
-@@ -932,6 +932,7 @@
+@@ -1001,6 +1001,7 @@
      "infinite_gold": "Infinite gold",
      "infinite_troops": "Infinite troops",
      "instant_build": "Instant build",
@@ -79,7 +79,7 @@ index 01a06956..3bdfb999 100644
      "mins_placeholder": "Mins",
      "nations": "Nations: ",
 diff --git a/src/client/SinglePlayerModal.ts b/src/client/SinglePlayerModal.ts
-index 64dda801..d3d51983 100644
+index af3c49ec..ee38e76d 100644
 --- a/src/client/SinglePlayerModal.ts
 +++ b/src/client/SinglePlayerModal.ts
 @@ -105,6 +105,7 @@ const DEFAULT_OPTIONS = {

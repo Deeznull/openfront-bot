@@ -69,7 +69,7 @@ const CACHE = path.resolve("..", "bot_runs", "games_cache.jsonl");
 const CODE_FILES = [
   "packages/engine/src/execution/bot/BotExecution.ts",
   "tests/bot/BotGame.ts",
-  "tests/bot/StandIn.ts",
+  "tests/bot/StandIn.ts", "engine-v0.35.0",
 ];
 const CODE = crypto.createHash("sha1")
   .update(CODE_FILES.map((f) => (fs.existsSync(f) ? fs.readFileSync(f, "utf8") : f)).join("\0"))

@@ -2,7 +2,7 @@
 # Downloads the official OpenFront game at the version this bot was built on,
 # adds the bot files and installs. Run from this repo: bash setup.sh
 set -e
-GAME_COMMIT=a1513835
+GAME_COMMIT=v0.35.0
 HERE="$(cd "$(dirname "$0")" && pwd)"
 
 mkdir -p tools
@@ -15,6 +15,6 @@ cp "$HERE/bot/BotExecution.ts" packages/engine/src/execution/bot/
 cp "$HERE"/bot/harness/* tests/bot/
 cp "$HERE"/bot/tests/Bot*.test.ts tests/
 cp "$HERE/bot/tests/Resim.ts" tests/replay/
-npm install
+npm ci --ignore-scripts --engine-strict=false
 
 echo "Done. Try: cd tools/game && npx tsx tests/bot/BotGame.ts --seed s1 --roulette --bot us --autoplay"

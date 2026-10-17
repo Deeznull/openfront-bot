@@ -8,14 +8,14 @@ This repository does not include the game's source code. The game can be downloa
 
 ## Contents
 - `openfront-bot.user.js`: the ready-to-install Tampermonkey script.
-- `bot/BotExecution.ts`: the bot.
+- `bot/BotExecution.ts`: the bot (game version v0.35.0).
 - `bot/harness/`: headless game runner (`BotGame.ts`), stand-in opponents, evaluation and tuning scripts (`Eval.mjs`, `Tune.mjs`, `stats.mjs`).
 - `bot/tests/`: unit tests.
 - `bot/v34/`: the bot ported to game version v0.34.24.
 - `engine-patch/autoplay.patch`: a small game patch that lets the bot play solo games.
 - `userscript-source/`: the source code and build script of the Tampermonkey script.
 - `review-tools/`: scripts for studying replays and game data.
-- `results/online-ffa-mix/`: online FFA map mix used to pick training lobbies.
+- `results/online-ffa-mix/`: online FFA map mix used to pick training lobbies (`ffa_cells_v035.json` for v0.35.0, `ffa_cells.json` for v0.34).
 
 ## 1. Using the bot in a game (Tampermonkey)
 1. Install the [Tampermonkey](https://www.tampermonkey.net/) browser extension (Chrome, Edge, Firefox, ...). In Chrome, open the extension's details and turn on **Allow User Scripts**.
@@ -26,11 +26,11 @@ This repository does not include the game's source code. The game can be downloa
 - **Farm option:** plays the 5 Easy solo games per UTC day that give XP, at Max speed, each held until 30+ game minutes for the most XP. Then it joins public FFA games; untick **…then public FFA games** to stop after the solo games.
 - **Panel:** **–/+** folds the panel; **Options** hides the checkboxes.
 
-The script is made for game version v0.34.24. On newer versions it keeps playing by following the live game, until a version changes too much; then it must be rebuilt (see `userscript-source/README.md`). Installed copies update themselves when a rebuilt script is pushed here.
+The script is made for game version v0.35.0 (since script 0.6.0; older 0.5.x scripts were made for v0.34.24 and don't work on v0.35). On newer versions it keeps playing by following the live game, until a version changes too much; then it must be rebuilt (see `userscript-source/README.md`). Installed copies update themselves when a rebuilt script is pushed here.
 
 ## 2. Training
 ### Setup
-The game itself is open source, so setup downloads it from the official repository (commit `a1513835`) and adds the bot on top. Needs git, Node.js and bash (Git Bash on Windows).
+The game itself is open source, so setup downloads it from the official repository (tag `v0.35.0`) and adds the bot on top. Needs git, Node.js 24 and bash (Git Bash on Windows).
 
 ```
 bash setup.sh
@@ -59,7 +59,7 @@ Tips:
 - Never let the agent play games itself in real time; it should only run the scripts.
 
 ## Results
-Each test game is a full free-for-all on a random map from the online 30+ player lobby mix (30-125 players). The 30+ limit follows TrackerFront, whose FFA win leaderboards count only lobbies of 30+ players. Every other player slot is the game's **Impossible** AI. The map's nations and tribes are added as in online lobbies. The table is the final test of bot version 0.5.5 (general mode, the same as 0.5.4): 200 games on new seeds never used in training, run once. The 0.5.0 final test on the same kind of mix won 27 of 200 (~7x).
+Each test game is a full free-for-all on a random map from the online 30+ player lobby mix (30-125 players). The 30+ limit follows TrackerFront, whose FFA win leaderboards count only lobbies of 30+ players. Every other player slot is the game's **Impossible** AI. The map's nations and tribes are added as in online lobbies. The table is the final test of bot version 0.5.5 (general mode, the same as 0.5.4): 200 games on new seeds never used in training, run once. The 0.5.0 final test on the same kind of mix won 27 of 200 (~7x). These tests ran on the game version before v0.35.0 with its map mix; a new test on v0.35.0 (new maps, new mix, changed nation AI) is running.
 
 | Lobby size | Games | Bot wins | Bot win rate | Impossible AI win rate | Bot vs Impossible |
 |---|---|---|---|---|---|

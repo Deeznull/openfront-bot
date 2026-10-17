@@ -25,7 +25,7 @@ Tampermonkey's **Dashboard → Utilities → Import from file**.
      reads "Start bot (next game)" and arms the bot for the next game.
    - **Auto-start in each game** keeps the bot on for every allowed game.
    - **Bot may send emojis** is off by default.
-   - **Turbo solo Max speed** (on by default): in solo games at Max speed the
+   - **Turbo solo Max speed** (off by default): in solo games at Max speed the
      next turn starts as soon as the last one is done, also in a background tab.
    - **Farm: Easy solo games on repeat** (off by default): from the homepage it
      starts an Easy solo game, the bot plays it at Max speed, and after the game
@@ -47,10 +47,10 @@ shadow receive the same turns, and every 10 ticks the script compares state
 hashes. Built from the site's engine version, the two stay identical. The
 header's `@description` records the engine and commit.
 
-- **Engines with snapshots** (the fork): on a mismatch the shadow reloads from
+- **Engines with snapshots** (the live site from v0.35.0, and the fork): on a mismatch the shadow reloads from
   a snapshot of the real game. If that keeps failing (more than 4 times in
   3 minutes), the bot stops and says the engine versions differ.
-- **Engines without snapshots** (the live site, v0.34): the bot switches to
+- **Engines without snapshots** (older sites on v0.34): the bot switches to
   **mirror mode** instead of stopping. The page forwards the real worker's
   per-tick updates; after each tick the shadow takes over the real tile owners,
   troops and gold, then runs the bot. The panel shows "mirror mode, N% in sync"
@@ -69,9 +69,20 @@ new site version when you can.
 
 ## Building for the live site
 
-The live site runs v0.34.24, which uses the older single-package layout
-(`src/core/…`). Build from a checkout of that tag with the bot copied in
-(run from the repository root):
+The live site runs v0.35.0, which uses the package layout (`packages/engine/…`).
+Build from a checkout of that tag with the bot copied in (run from the
+repository root; `bash setup.sh` makes the same checkout in `tools/game`):
+
+```bash
+git clone --branch v0.35.0 https://github.com/openfrontio/OpenFrontIO.git tools/OpenFrontIO-v0.35.0
+mkdir -p tools/OpenFrontIO-v0.35.0/packages/engine/src/execution/bot
+cp bot/BotExecution.ts tools/OpenFrontIO-v0.35.0/packages/engine/src/execution/bot/
+cd tools/OpenFrontIO-v0.35.0 && npm ci --ignore-scripts --engine-strict=false && cd ../..
+node userscript-source/build.mjs --repo tools/OpenFrontIO-v0.35.0 --live
+```
+
+For a site still on v0.34.24 (older single-package layout, `src/core/…`), use
+the v0.34 port of the bot instead:
 
 ```bash
 git clone --branch v0.34.24 https://github.com/openfrontio/OpenFrontIO.git tools/OpenFrontIO-v0.34.24
@@ -175,7 +186,7 @@ and the bot's intents are fed back as turns.
 node build.mjs --test
 ```
 
-(add `--repo ../OpenFrontIO-v0.34.24` to test the live-site engine)
+(add `--repo <checkout>` to test another engine, e.g. `../OpenFrontIO-v0.34.24`)
 
 ```bash
 node test-dist/sim.mjs --min 6 --map World --difficulty Impossible
