@@ -4,6 +4,8 @@ A code bot/script for the OpenFront game, trained by running many headless games
 
 Developed to beat human players in online games. So far it has only been tested against the game's Impossible AI, not yet in online games. To contribute, see [below](#contributing).
 
+Questions, ideas and bug reports are welcome on the [Discord server](https://discord.gg/WhVXHbD6rd).
+
 This repository does not include the game's source code. The game can be downloaded from the [OpenFrontIO](https://github.com/openfrontio/OpenFrontIO) repository.
 
 ## Contents
@@ -75,9 +77,9 @@ All 10 farm games ended in a win between 32 and 36 game minutes.
 The bot was not trained by reading or exploiting the Impossible AI's source code. The Impossible AI is only used as an opponent. The goal was strategy that also works against human players in online games.
 
 ## Contributing
-Run training (section 2), and open a pull request with a bot change once it wins more on the same seeds. Bug reports and ideas are welcome as issues.
+Run training (section 2), and open a pull request with a bot change once it wins more on the same seeds. Bug reports and ideas are welcome as issues or on [Discord](https://discord.gg/WhVXHbD6rd).
 
-The replays, game data and analysis outputs used for training (about 4 GB) aren't in this repository. Contact **deeznull** on Discord to obtain them.
+The replays, game data and analysis outputs used for training (about 4 GB) aren't in this repository. Contact **deeznull** on the [Discord server](https://discord.gg/WhVXHbD6rd) to obtain them.
 
 ## Disclaimer
 This is an independent, unofficial project. It is not affiliated with, endorsed by or sponsored by the OpenFront developers or any game operator. "OpenFront" and related names belong to their respective owners and are used here only to describe what the software works with.
