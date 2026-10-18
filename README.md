@@ -79,7 +79,7 @@ The bot was not trained by reading or exploiting the Impossible AI's source code
 ## Contributing
 Run training (section 2), and open a pull request with a bot change once it wins more on the same seeds. Bug reports and ideas are welcome as issues or on [Discord](https://discord.gg/WhVXHbD6rd).
 
-The replays, game data and analysis outputs used for training (about 4 GB) aren't in this repository. Contact **deeznull** on [Discord](https://discord.gg/WhVXHbD6rd) to obtain them.
+The replays, game data and analysis outputs used for training (about 4 GB) aren't in this repository. Contact **deeznull** on Discord to obtain them.
 
 ## Disclaimer
 This is an independent, unofficial project. It is not affiliated with, endorsed by or sponsored by the OpenFront developers or any game operator. "OpenFront" and related names belong to their respective owners and are used here only to describe what the software works with.
