@@ -1078,7 +1078,7 @@ function render() {
   const s = c?.stats;
   ui.stats.textContent =
     c && c.allowed
-      ? `${s ? (s.spawn ? "spawn phase · " : "") + (s.alive || s.spawn ? `${s.tiles} tiles · ${fmt(s.troops)} troops · ${fmt(s.gold)} gold` : "eliminated") : "—"}` +
+      ? `${s ? (s.spawn ? "spawn phase · " : "") + (s.alive || s.spawn ? `${s.tiles} tiles · ${fmt(s.troops / 10)} troops · ${fmt(s.gold)} gold` : "eliminated") : "—"}` +
         (s?.mirv ? ` · MIRV bank vs ${s.mirv} (keep ${fmt(s.keep ?? 0)})` : "") +
         ` · sent ${c.sent}${c.dropped ? ` (dropped ${c.dropped})` : ""}`
       : "";
