@@ -1001,3 +1001,50 @@ describe("BotExecution port arms", () => {
     expect((s.bot as any).doomAttacks).toBe(1);
   });
 });
+
+describe("BotExecution endAlly", () => {
+  // winEta is stubbed: minutes until each player clears the (sinking) win bar.
+  async function end(params: Partial<typeof DEFAULT_PARAMS>, eta: Record<string, number>) {
+    const s = await capSetup({ allySelect: 1, endAlly: 1, ...params });
+    (s.bot as any).winEta = (p: Player) => eta[p.name()] ?? Infinity;
+    (s.bot as any).power = (p: Player) => p.troops();
+    s.me.setTroops(100_000);
+    s.a.setTroops(200_000);
+    return s;
+  }
+  const kind = (s: any) => (s.bot as any).endKind(s.me, s.a);
+
+  test("off by default", async () => {
+    const s = await end({ endAlly: 0 }, { a: 1 });
+    expect(kind(s)).toBe(null);
+  });
+
+  test("a rival about to cross the bar before us is no ally while we can hurt it", async () => {
+    const s = await end({}, { a: 2, me: 10 });
+    expect(kind(s)).toBe("rival");
+  });
+
+  test("a rival we can't hurt keeps the usual ally logic", async () => {
+    const s = await end({}, { a: 2, me: 10 });
+    s.a.setTroops(1_000_000); // we are under endHurt x its power, no silo, no one else hits it
+    expect(kind(s)).toBe(null);
+    (s.a as any).incomingAttacks = () => [{ attacker: () => s.far }];
+    expect(kind(s)).toBe("rival"); // others are already hitting it
+  });
+
+  test("a rival crossing after the alliance window is not refused", async () => {
+    const s = await end({}, { a: 60, me: 70 });
+    expect(kind(s)).toBe(null);
+  });
+
+  test("we cross first inside the window: keep every ally", async () => {
+    const s = await end({}, { a: 10, me: 2 });
+    expect(kind(s)).toBe("lead");
+  });
+
+  test("tribes are never affected", async () => {
+    const s = await end({}, { a: 2, me: 10 });
+    (s.a as any).type = () => PlayerType.Bot;
+    expect(kind(s)).toBe(null);
+  });
+});

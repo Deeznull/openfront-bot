@@ -150,6 +150,7 @@ export function createShadow(post: Post, onPage = false) {
     finishFloor: 0.6,
     tribeCommit: 1, // 0.5.6 (owner 2026-10-16): a tribe we attacked is finished (counter push + kill, low commit floor)
     playerSteal: 0.5, // 0.5.6 (owner 2026-10-16): steal the kill of a very low enemy/ex-ally/traitor ally others attack (other allies never); kill fits in 50% of our troops
+    endAlly: 1, // 0.6.3 (fresh-seed A/B 25 vs 18 wins of 90): endgame clock, no alliance/renewal with a rival about to cross the win bar first; keep every ally while we are about to cross it (tribes never affected)
     baitHuman: 1, // ally-bait boats only into humans no stronger than us
     structTarget: 0.5, // prefer neighbours whose cities/ports/factories our attack can reach
     // 0.5.2 live-play fixes (owner reports 2026-10-14; quick sim on tf0-15)
