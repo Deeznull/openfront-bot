@@ -77,7 +77,7 @@ All 10 farm games ended in a win between 32 and 36 game minutes.
 The bot was not trained by reading or exploiting the Impossible AI's source code. The Impossible AI is only used as an opponent. The goal was strategy that also works against human players in online games.
 
 ## Contributing
-Run training (section 2), and open a pull request with a bot change once it wins more on the same seeds. Bug reports and ideas are welcome as issues.
+Run training (section 2), and open a pull request with a bot change once it wins more on the same seeds. Bug reports and ideas are welcome as Issues.
 
 The replays, game data and analysis outputs used for training (about 4 GB) aren't in this repository. Contact **deeznull** on Discord to obtain them.
 
