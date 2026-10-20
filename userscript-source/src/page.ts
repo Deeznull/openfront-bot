@@ -130,23 +130,92 @@ let turnsPosted = 0;
 let kickAt = 0;
 const realSetInterval = W.setInterval.bind(W);
 const realClearInterval = W.clearInterval.bind(W);
+
+// Background tabs (0.6.3.1): a hidden tab's timers run at most once a second,
+// and once a minute after ~5 minutes, so a solo game's turns (the 5 ms check)
+// and the bot's sends (pump) all but stop. While the tab is hidden a worker
+// clock (worker timers and their messages are not throttled) runs every
+// interval made through window.setInterval at its own pace instead; the real
+// timers stand down meanwhile. A held Web Lock keeps the tab from being frozen.
+// The game's picture (requestAnimationFrame) still pauses until the tab is back.
+type Tick = { fn: (...a: any[]) => unknown; ms: number; args: any[]; last: number };
+const ticks = new Map<unknown, Tick>();
+let clock: Worker | null = null;
+let unlock: (() => void) | null = null;
+function clockTick() {
+  const now = performance.now();
+  for (const t of ticks.values()) {
+    if (now - t.last < t.ms) continue;
+    t.last = now;
+    try {
+      t.fn(...t.args);
+    } catch (e) {
+      console.warn("[ofbot] background tick failed", e);
+    }
+  }
+}
+function setClock() {
+  if (!document.hidden) {
+    clock?.terminate();
+    clock = null;
+    unlock?.();
+    unlock = null;
+    return;
+  }
+  if (!clock) {
+    try {
+      const url = URL.createObjectURL(new Blob(["setInterval(()=>postMessage(0),4)"], { type: "text/javascript" }));
+      clock = new RealWorker(url);
+      clock.onmessage = clockTick;
+    } catch {
+      clock = null; // no workers: the throttled real timers carry on
+    }
+  }
+  const locks = (navigator as any).locks;
+  if (!unlock && locks?.request) {
+    locks.request("ofbot-awake", () => new Promise<void>((res) => (unlock = res))).catch(() => {});
+  }
+}
+document.addEventListener("visibilitychange", setClock);
+
 W.setInterval = (fn: any, ms?: number, ...args: any[]) => {
-  if (ms === 5 && typeof fn === "function" && /replaySpeedMultiplier|turnIntervalMs/.test(String(fn))) {
+  if (typeof fn !== "function") return realSetInterval(fn, ms, ...args);
+  let run = fn;
+  const isTurnPoll = ms === 5 && /replaySpeedMultiplier|turnIntervalMs/.test(String(fn));
+  if (isTurnPoll) {
     // The local server's turn check: no new turn while the bot's shadow lags.
-    const gated = function (this: any, ...a: any[]) {
+    run = function (this: any, ...a: any[]) {
       if (shadowLagging()) return;
       return fn.apply(this, a);
     };
-    const id = realSetInterval(gated, ms, ...args);
-    turnPoll = gated;
-    turnPollId = id;
-    return id;
   }
-  return realSetInterval(fn, ms, ...args);
+  const t: Tick = { fn: run, ms: Math.max(4, Number(ms) || 0), args, last: performance.now() };
+  const id = realSetInterval(
+    function (this: any, ...a: any[]) {
+      if (clock) return; // hidden: the worker clock runs it
+      t.last = performance.now();
+      return run.apply(this, a);
+    },
+    ms,
+    ...args,
+  );
+  ticks.set(id, t);
+  if (isTurnPoll) {
+    turnPoll = run;
+    turnPollId = id;
+  }
+  return id;
 };
 W.clearInterval = (id?: any) => {
   if (id !== undefined && id === turnPollId) turnPoll = turnPollId = null;
+  ticks.delete(id);
   return realClearInterval(id);
+};
+const realClearTimeout = W.clearTimeout.bind(W);
+W.clearTimeout = (id?: any) => {
+  // clearTimeout also stops an interval
+  if (ticks.delete(id) && id === turnPollId) turnPoll = turnPollId = null;
+  return realClearTimeout(id);
 };
 const kick = new MessageChannel();
 kick.port1.onmessage = () => {
@@ -345,7 +414,7 @@ function startShadow(c: GameCtx, onPage: boolean) {
 }
 
 /**
- * Older engines put the map files in the init message. Newer ones (the live site,
+ * Older engines put the map files in the init message. Newer ones (openfront.io
  * v0.34) send only `cdnBase` and the worker fetches the map itself; the shadow
  * does the same, with the page's asset manifest for the hashed file names.
  */
