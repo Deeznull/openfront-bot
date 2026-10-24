@@ -1030,6 +1030,35 @@ describe("BotExecution samCluster", () => {
     expect(sb.maybeSpawnStructure(UnitType.City)).toBe(true);
     expect(calls).toEqual([UnitType.City]);
   });
+
+  test("samHeat: enemy bombs at our land lower the cluster bar, for 5 minutes", async () => {
+    const { game, mp, b, built } = await make(true);
+    const ep = game.player("en");
+    b.params = { ...b.params, samHeat: 1 };
+    mp.buildUnit(UnitType.City, game.ref(30, 30), {});
+    mp.buildUnit(UnitType.City, game.ref(40, 30), {});
+    b.samClusterTick(mp);
+    expect(built.length).toBe(0); // 2 levels < 5
+    // our own bomb and an enemy bomb at its own land don't count
+    mp.buildUnit(UnitType.AtomBomb, game.ref(50, 50), { targetTile: game.ref(100, 170) });
+    ep.buildUnit(UnitType.AtomBomb, game.ref(100, 180), { targetTile: game.ref(100, 170) });
+    b.samClusterTick(mp);
+    expect(built.length).toBe(0);
+    // one enemy atom bomb at us: bar 5 / 2 = 2.5 > 2, still none
+    ep.buildUnit(UnitType.AtomBomb, game.ref(100, 180), { targetTile: game.ref(60, 60) });
+    b.samClusterTick(mp);
+    expect(built.length).toBe(0);
+    // plus a hydrogen bomb: n = 3, bar 1.25 <= 2: a SAM
+    ep.buildUnit(UnitType.HydrogenBomb, game.ref(100, 180), { targetTile: game.ref(60, 60) });
+    b.samClusterTick(mp);
+    expect(built.length).toBe(1);
+    // 5 minutes later the heat is gone
+    const t = game.ticks();
+    vi.spyOn(game, "ticks").mockReturnValue(t + 3001);
+    b.samClusterTick(mp);
+    expect(built.length).toBe(1);
+    expect(b.nukeHeat(mp)).toBe(0);
+  });
 });
 
 describe("BotExecution samSave", () => {
@@ -1304,6 +1333,77 @@ describe("BotExecution homeKeep", () => {
     mine.delete(false);
     mp.buildUnit(UnitType.AtomBomb, game.ref(50, 50), { targetTile: game.ref(60, 50) });
     expect(tick(() => [new AttackExecution(s, mp, tp.id())])).toEqual([s]);
+  });
+});
+
+describe("BotExecution allyGuard", () => {
+  // me (0..100) borders an ally (100..150) and a tribe (0..10 x 100..110).
+  async function world(allyGuard: number, allyX: number) {
+    const me = new PlayerInfo("me", PlayerType.Human, null, "me");
+    const ally = new PlayerInfo("ally", PlayerType.Nation, null, "ally");
+    const tribe = new PlayerInfo("tribe", PlayerType.Bot, null, "tribe");
+    const game = await setup("big_plains", {}, [me, ally, tribe]);
+    const mp = game.player("me"), ap = game.player("ally"), tp = game.player("tribe");
+    conquerRect(game, mp, 0, 0, 100, 100);
+    conquerRect(game, ap, 100, 0, 50, 100);
+    conquerRect(game, tp, 0, 100, 10, 10);
+    mp.createAllianceRequest(ap)?.accept();
+    const bot = new BotExecution("ag", new Nation(undefined, me), { ...DEFAULT_PARAMS, homeKeep: 0, minKeep: 0.1, allyGuard });
+    bot.init(game);
+    const b = bot as any;
+    b.player = mp;
+    b.reserveRatio = 0.1;
+    const maxT = game.config().maxTroops(mp);
+    mp.setTroops(0.4 * maxT);
+    ap.setTroops(allyX * mp.troops());
+    tp.setTroops(0.3 * maxT);
+    const tick = (send: () => any) => {
+      const got: any[] = [];
+      const add = vi.spyOn(game as any, "addExecution").mockImplementation((...ex: any[]) => { got.push(...ex); });
+      const body = vi.spyOn(b, "tickBody").mockImplementation(() => { game.addExecution(send()); });
+      bot.tick(game.ticks());
+      body.mockRestore();
+      add.mockRestore();
+      return got.map((e) => Math.round(e.startTroops));
+    };
+    return { game, mp, ap, tp, b, maxT, tick };
+  }
+
+  test("off: only the floor stays home", async () => {
+    const { mp, tp, maxT, tick } = await world(0, 2);
+    const s = Math.round(0.2 * maxT); // under the .3 above the floor
+    expect(tick(() => new AttackExecution(s, mp, tp.id()))).toEqual([s]);
+  });
+
+  test("on: an ally twice our size keeps allyGuard x 0.5 x its troops home", async () => {
+    const { mp, ap, tp, maxT, tick, b } = await world(0.5, 2);
+    const T = mp.troops();
+    const guard = 0.5 * 0.5 * ap.troops(); // = 0.5 T, above the .1 floor
+    expect(guard).toBeGreaterThan(0.1 * maxT);
+    expect(tick(() => new AttackExecution(Math.round(0.3 * maxT), mp, tp.id()))).toEqual([Math.floor(T - guard)]);
+    expect(b.allyGuarded).toBe(1);
+  });
+
+  test("graded: an ally 1.5x our size keeps half of that; a smaller ally nothing", async () => {
+    const { mp, ap, tp, maxT, tick } = await world(1, 1.5);
+    const T = mp.troops();
+    const guard = 0.5 * ap.troops() * 0.5; // .375 T = .15 maxT, above the floor
+    expect(guard).toBeGreaterThan(0.1 * maxT);
+    const s = Math.round(0.2 * maxT); // under the .3 above the floor
+    expect(tick(() => new AttackExecution(Math.round(0.3 * maxT), mp, tp.id()))).toEqual([Math.floor(T - guard)]);
+    ap.setTroops(0.9 * mp.troops());
+    expect(tick(() => new AttackExecution(s, mp, tp.id()))).toEqual([s]);
+  });
+
+  test("full weight once the alliance ends unrenewed; a send at the ally itself is exempt", async () => {
+    const { game, mp, ap, tp, maxT, tick } = await world(0.3, 2);
+    const a = mp.allianceWith(ap)!;
+    vi.spyOn(a, "expiresAt").mockReturnValue(game.ticks() + 100); // < allyWarn 300
+    const T = mp.troops();
+    const guard = 0.3 * ap.troops(); // w 1
+    expect(tick(() => new AttackExecution(Math.round(0.3 * maxT), mp, tp.id()))).toEqual([Math.floor(T - guard)]);
+    const s = Math.round(0.2 * maxT); // under the .3 above the floor
+    expect(tick(() => new AttackExecution(s, mp, ap.id()))).toEqual([s]);
   });
 });
 

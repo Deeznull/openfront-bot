@@ -127,3 +127,62 @@ describe("BotExecution stackUp", () => {
     expect(upgradeTarget(game)).toEqual([]);
   });
 });
+
+describe("BotExecution mirvGuard", () => {
+  const make = async () => {
+    const me = new PlayerInfo("me", PlayerType.Human, null, "me");
+    const foe = new PlayerInfo("foe", PlayerType.Nation, null, "foe");
+    const game = await setup("big_plains", {}, [me, foe]);
+    const mp = game.player("me");
+    const fp = game.player("foe");
+    conquerRect(game, mp, 30, 0, 100, 170);
+    conquerRect(game, fp, 0, 0, 30, 30);
+    mp.setTroops(1_000_000);
+    fp.setTroops(100_000);
+    mp.buildUnit(UnitType.MissileSilo, game.ref(60, 60), {});
+    fp.buildUnit(UnitType.MissileSilo, game.ref(10, 10), {});
+    const bot = new BotExecution("mg", new Nation(undefined, me), { ...DEFAULT_PARAMS, potW: 0, mirvSave: 2, mirvGuard: 0.15 });
+    bot.init(game);
+    const b = bot as any;
+    b.player = mp;
+    b.goldPrev = Number(mp.gold());
+    b.goldGains = Array(60).fill(50_000);
+    const fired: Player[] = [];
+    b.mirvBehavior = { maybeSendMIRV: (t: Player) => fired.push(t) };
+    return { game, mp, fp, b, fired };
+  };
+
+  test("the land leader banks the MIRV price and does not launch from it", async () => {
+    const { game, mp, fp, b, fired } = await make();
+    mp.addGold(100_000_000n);
+    b.mirvSaveTick(mp, game.ticks() + 1000);
+    expect(b.mirvGuarding).toBe(true);
+    expect(b.mirvSaving).toBe(fp);
+    expect(b.mirvReserve).toBe(Number(game.unitInfo(UnitType.MIRV).cost(game, mp)));
+    expect(fired).toEqual([]);
+  });
+
+  test("a MIRV aimed at our land is answered at its sender", async () => {
+    const { game, mp, fp, b, fired } = await make();
+    const t = game.ticks() + 1000;
+    b.mirvSeen.set(fp, t - 100);
+    b.mirvSaveTick(mp, t); // too poor: keeps guarding
+    expect(fired).toEqual([]);
+    mp.addGold(100_000_000n);
+    b.mirvSaveTick(mp, t + 10);
+    expect(fired).toEqual([fp]);
+    expect(b.mirvCounters).toBe(1);
+    expect(b.mirvR).toBe(fp);
+    // Old sightings (> 2 min) are dropped.
+    b.mirvSeen.set(fp, t - 2000);
+    b.mirvSaveTick(mp, t + 1000);
+    expect(b.mirvCounters).toBe(1);
+  });
+
+  test("no guard when we do not lead", async () => {
+    const { game, mp, b } = await make();
+    b.params = { ...b.params, mirvGuard: 0.99 };
+    b.mirvSaveTick(mp, game.ticks() + 1000);
+    expect(b.mirvGuarding).toBe(false);
+  });
+});

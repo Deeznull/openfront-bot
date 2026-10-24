@@ -106,15 +106,18 @@ export interface BotParams {
   mirvSave: number; // >0 = graded MIRV bank: a non-ally with >= mirvSave x our land and >= 1.5x our power that wins within ~20 min (or holds >= 35% of the land) makes us stop AI builds/warships/nukes and bank gold, but only while our measured income affords MIRV (+ silo) before its win ETA; fired at once when affordable, then the mirvBank land follow-up
   mirvRich: number; // >0 (needs mirvSave) = with no runaway, gold >= MIRV (+ silo if none) and the biggest non-ally land holder: MIRV it when (gold / cost) x (its land / ours) >= mirvRich and its land >= 0.6x ours (owner: "bot had so much money but he didnt even merv")
   postSpread: number; // >0 = the Nation AI's defense-post spots must be >= postSpread x defensePostRange from each of our posts (a post's bonus is all-or-nothing per tile, overlapping cover adds nothing; v0.34 falls back to stacking once the front is covered)
+  allyGuard: number; // >0 = homeKeep also keeps allyGuard x w x A x min(1, A/ours - 1) troops home against the strongest bordering non-tribe ally of A troops that outgrew us (w 1 when its alliance ends unrenewed within allyWarn, else 0.5); sends at that ally are exempt. v0.35 fin167: the winner Imp32 was our ally 19.7-37.7m, then hit us with 14-29M waves
   killCap: number; // >0 = homeKeep's kill exemption (send >= 2x a small target's troops may go down to the defense floor) only covers killCap x the target's troops for a player target (tribes keep it whole); the rest of the send keeps the full homeKeep. v0.35 fin189 24.07m: the Nation AI's 'hated' send put 10.2M on Imp1 (1.19M troops, 558 tiles) out of 26.5M while Imp21/Imp29 (15-17M) stood at our border
   homeKeep: number; // >0 = every attack and boat we send (own logic and Nation AI) leaves max(homeKeep (regen ~94% of peak at .30), defense floor) x maxTroops plus the troops attacking us by land at home; sends in one tick add up. A send is trimmed to what is above that, or held if under half survives. A kill (send >= 2x the target's troops, target < 20% of our land) may go down to the defense floor; troops of an attacker we hit back are not kept (the hit cancels them 1:1); off in the doomsday clock
   mirvPre: number; // >0 (needs mirvSave) = pre-emptive MIRV: a bordering non-ally with a silo, >= 0.2x our land and gold >= mirvPre x the MIRV price can soon MIRV us (v0.35 fin167/189/198: rich stand-ins banked 15-25M while our cities kept us at ~1M, then MIRV + land strike); bank while our income reaches the price before its own (measured) gold does, MIRV it when >= 30% of the warheads get past its SAMs, then the land follow-up
+  mirvGuard: number; // >0 (needs mirvSave) = counter-MIRV fund: while we hold the most land or City levels with >= mirvGuard of the land and a non-friend has a silo, keep the MIRV price (+ silo) banked (builds, warships, nukes use only gold above it; no pre-emptive launch); a MIRV aimed at our land is answered at once with ours at its sender (fin109/89/74...: the leader is MIRVed at 20-26m with ~1M gold, the MIRVer then wins 6/9)
   mirvDuel: number; // 1 = leader endgame MIRV (FFA, needs mirvSave): 2-3 leaders (each >= half the top's land, the rest under half the smallest of them, us among them) holding >= half the land: bank for a MIRV at the biggest non-ally leader; 2 leaders and a shared border: MIRV it whenever the gold is there (no banking)
   mirvSpend: number; // >0 = while mirvSave banks, gold above a reserve still builds (AI structures, stackUp upgrades): the deadline is fixed when banking starts (0.8 x eta, endgame 10 min) and the reserve is MIRV (+silo) cost minus mirvSpend x income x the minutes left, so it rises to the full cost by the deadline
   stackUp: number; // >0 = City/Factory: upgrade the best one under our SAM cover (score: SAM levels covering it, then its level) instead of placing a new one; any upgradable one when gold >= stackUp x its cost or a new one finds no tile
   selfDiff: number; // 1 = the inherited Nation AI behaviours (attack timing, structures, upgrades, SAM ratio, warship tracking, nukes, alliances) always run with Impossible logic; the lobby difficulty only drives world rules (engine send caps, natWin, ally cap). Public lobbies are Medium, so without it the bot plays a Medium nation's build/upgrade logic
   craterPush: number; // >0 = for craterPush minutes after our MIRV lands, keep a land attack on its target topped up to 1.5x its troops (with a share of our spare troops) and send into free land beside us; floors still apply
   mirvDump: number; // >0 = while an enemy MIRV flies at our land (or split warheads would take >= half our troops), troops above mirvDump x maxTroops go into land now, floors skipped, but only into free land, non-allied tribes we outnumber 2x and players we outnumber 4x with the send (owner: anything else is suicide)
+  samHeat: number; // >0 (needs samCluster) = the SAM cluster bar drops to samCluster / (1 + samHeat x n), n = enemy bombs aimed at our land in the last 5 min (atom 1, hydrogen 2): a player being nuked covers smaller clusters too (v0.35 fin167: 29 nukes at us in 14-20m, then a MIRV)
   samCluster: number; // >0 = SAMs only (no AI ratio SAMs) where our City/Port/Factory/Silo levels not yet under a SAM sum to >= samCluster within 0.8 SAM range, while a non-friend has a silo
   minKeep: number; // >0 = hard floor: no send of ours (attack or boat, kills included) leaves fewer than minKeep x maxTroops (+ incoming land attackers) home (owner 2026-10-14: "can bot never ever get below 20 percent max troop")
   wildSize: number; // >0 = an AI boat to unowned land carries wildSize x the troops its connected wilderness costs to take (sum of per-tile attacker losses), at least 200, never more than the AI chose; a wilderness over 4000 tiles keeps the AI size
@@ -144,6 +147,8 @@ export interface BotParams {
   navyMax: number; // max warships built for defense
   navyKeep: number; // keep gold >= cost x (1 + navyKeep) when building one
   finishK: number; // finish off a bordering tribe whose kill costs <= finishK x our troops (wounded tribes we or others left alive)
+  portFirst: number; // minutes: until then, with no port yet and shared water, the first port is the top build (before the first city, and past the early-city rush)
+  natCapIn: number; // 1 = in the AL-027 early window, accept a Nation's alliance request only while we have < 2 Nation allies or it has >= our troops
   portLake: number; // 1 = no port on a lake unless another player already has a port there (trade) and we have none there yet
   factLink: number; // 1 = build factories only where they get a rail link (to anyone's city/port/factory)
   tribeKill: number; // 1 = size every tribe attack to kill it outright (engine attack cost over its tiles), never a stalling half-attack; 2 = kill-size it when that fits, else the usual chunk attack
@@ -188,6 +193,7 @@ export interface BotParams {
   nukeAlly: number; // >0 = a bordering nuke-armed player counts as "strong" (ally, renew, accept) from power ratio allyStrong / (1 + nukeAlly x arm x (1 - our SAMs / its silos)), arm as in nukeRisk (v0.35 H/I nations nuke + land-strike the strongest bordering non-friend; allies are exempt)
   samSave: number; // >0 (needs samCluster) = while a SAM is due (a silo-holding non-friend, cluster >= samCluster) but gold is short, the AI's other builds wait so gold reaches the SAM cost; defense posts still build; at most samSave minutes per SAM (v0.35 fin186: 0 SAM with 80 cities, cities kept gold < 1.5M, then nukes + MIRV)
   boxStrong: number; // >0 = boxFront: when no "ok" (< allyStrong) neighbour is left, the weakest bordering non-friend under boxStrong x our power may be the front (v0.35 fin193/fin180: all neighbours 0.7-1.1x, everyone allied, land flat 5-10 min)
+  lapseNuke: number; // >0 = a lapse strike needs the ex-ally under lapseStrike x our troops / (1 + lapseNuke x nukeExposure): nuke-armed targets with silos beyond our SAM cover need a bigger edge (v0.35 fin167: two lapse strikes on silo+SAM-heavy targets, each nuked back within 4 s, 29 nukes at us in 6 min)
   lapseCap: number; // >0 = lapse/traitor/expiry strikes keep troops out on attacks (incl. this send) <= lapseCap x our total army (v0.35 fin193: three ex-ally strikes of 55-70% left 22% home)
   siloGate: number; // >0 = no silo buy while (incoming troops + 0.5 x bordering non-ally threat) / our troops > siloGate (v0.35 fin1: 1M silos bought mid pile-on, 0 nukes sent)
   traitorK: number; // >0 = graded traitor strike (30 s debuff: attackers take 0.5x losses). Bordering non-tribe traitor whose troops x (1 - 0.5 busy) < traitorK x our troops above the reserve, while no stronger hostile borders us, incoming <= 0.3x ours and >= 10 s of debuff remain: one attack on the best such target (weakest ratio first). An ally who turned traitor passes the same gates before the free break. AFK neighbours use the same gate (no window).
@@ -292,7 +298,9 @@ export const DEFAULT_PARAMS: BotParams = {
   mirvSave: 0,
   mirvRich: 0,
   mirvPre: 0,
+  mirvGuard: 0,
   mirvDuel: 0,
+  samHeat: 0,
   samCluster: 0,
   mirvDump: 0,
   craterPush: 0,
@@ -300,6 +308,7 @@ export const DEFAULT_PARAMS: BotParams = {
   mirvSpend: 0,
   stackUp: 0,
   wildSize: 0,
+  allyGuard: 0,
   killCap: 0,
   homeKeep: 0,
   minKeep: 0,
@@ -330,6 +339,8 @@ export const DEFAULT_PARAMS: BotParams = {
   landPush: 0,
   pushK: 2,
   factLink: 0,
+  portFirst: 0,
+  natCapIn: 0,
   portLake: 0,
   tribeKill: 0,
   killMargin: 0.15,
@@ -369,6 +380,7 @@ export const DEFAULT_PARAMS: BotParams = {
   nukeAlly: 0,
   samSave: 0,
   boxStrong: 0,
+  lapseNuke: 0,
   lapseCap: 0,
   siloGate: 0,
   betrayOk: 0,
@@ -630,6 +642,7 @@ export class BotExecution extends NationExecution {
 
   public homeTrimmed = 0;
   public killCapped = 0;
+  public allyGuarded = 0;
   // Enemy nukes on their way to our land, for keepHome: `keep` is the share of
   // our troops an atom/hydrogen bomb leaves (it removes 5·troops/tiles per tile
   // it takes, from home and from our attacks alike, so sending doesn't save
@@ -877,8 +890,10 @@ export class BotExecution extends NationExecution {
     // send (the game then caps the send at what's left) or after it.
     const nk = this.nukeHold;
     const T = me.troops();
+    const guard = this.allyGuardKeep(me, target);
     const room = (frac: number) => {
-      const base = nk.keep < 1 ? Math.min(T * nk.keep - frac * maxT, T - (frac * maxT) / nk.keep) : T - frac * maxT;
+      const keep = Math.max(frac * maxT, guard);
+      const base = nk.keep < 1 ? Math.min(T * nk.keep - keep, T - keep / nk.keep) : T - keep;
       return base - this.homePending - this.inflightTroops - nk.loss - incoming;
     };
     let avail = room(kill ? Math.max(this.params.minKeep, floor) : full);
@@ -891,6 +906,7 @@ export class BotExecution extends NationExecution {
       this.homePending += send;
       return true;
     }
+    if (guard > (kill ? Math.max(this.params.minKeep, floor) : full) * maxT) this.allyGuarded++;
     if (avail < 1 || avail < 0.5 * send) {
       this.homeHeld++;
       return false;
@@ -899,6 +915,23 @@ export class BotExecution extends NationExecution {
     this.homePending += e[field];
     this.homeTrimmed++;
     return true;
+  }
+
+  /** allyGuard: troops kept home against the strongest bordering ally that outgrew us. */
+  private allyGuardKeep(me: Player, target: Player | null): number {
+    if (this.params.allyGuard <= 0) return 0;
+    const T = Math.max(1, me.troops());
+    const g = this.botGame;
+    let best = 0;
+    for (const a of me.alliances()) {
+      const o = a.other(me);
+      if (o === target || o.type() === PlayerType.Bot || me.isOnSameTeam(o) || !o.isAlive()) continue;
+      const A = o.troops();
+      if (A <= T || !me.sharesBorderWith(o)) continue;
+      const ending = a.expiresAt() - g.ticks() < this.params.allyWarn && !a.agreedToExtend(o);
+      best = Math.max(best, (ending ? 1 : 0.5) * A * Math.min(1, A / T - 1));
+    }
+    return this.params.allyGuard * best;
   }
 
   private tickBody(ticks: number) {
@@ -1134,6 +1167,13 @@ export class BotExecution extends NationExecution {
     sb.doHandleStructures = () => {
       const me: Player = sb.player;
       const cities = me.unitsOwned(UnitType.City);
+      // portFirst: no port yet, shared water, early -> the port goes first, also before the first city.
+      if (this.params.portFirst > 0 && g.ticks() < this.params.portFirst * 600 &&
+          me.unitsOwned(UnitType.Port) === 0 && !g.config().isUnitDisabled(UnitType.Port)) {
+        sb.reachableStationsCache = null;
+        sb._sharedWaterComponents = g.sharedWaterComponents(me);
+        if (sb._sharedWaterComponents !== null) return sb.maybeSpawnStructure(UnitType.Port);
+      }
       if (g.ticks() >= this.params.earlyCityMin * 600 || cities >= this.params.earlyCity ||
           g.config().isUnitDisabled(UnitType.City)) return orig();
       sb.reachableStationsCache = null;
@@ -1561,16 +1601,22 @@ export class BotExecution extends NationExecution {
     const front = this.params.boxFront > 0 ? this.expansionFront(me, ticks) : null;
     if (ticks % 5 === 0) {
       let n = me.alliances().length;
+      const capIn = this.params.natCapIn > 0 && this.params.allyVid > 0 && this.natEarly(g.elapsedGameSeconds() / 60);
+      let natN = me.alliances().filter((a) => a.other(me).type() === PlayerType.Nation).length;
       const reqs = [...me.incomingAllianceRequests()].sort((a, b) => b.requestor().troops() - a.requestor().troops());
       const top2 = this.params.allyVid > 0 && g.elapsedGameSeconds() >= 300 ? this.topTwo(me) : [];
       for (const req of reqs) {
         const k = this.allyKind(me, req.requestor());
         const e = this.endKind(me, req.requestor());
         const leader = req.requestor().type() === PlayerType.Human && top2.includes(req.requestor());
-        if (req.requestor() !== front && e !== "rival" && !leader && !this.humanNo(me, req.requestor(), k, e) &&
+        // natCapIn: early Nation allies beyond 2 leave us no free border to grow into (early-lever study).
+        const natReq = req.requestor().type() === PlayerType.Nation;
+        const capped = capIn && natReq && natN >= 2 && req.requestor().troops() < me.troops();
+        if (!capped && req.requestor() !== front && e !== "rival" && !leader && !this.humanNo(me, req.requestor(), k, e) &&
             (e === "lead" || k === "strong" || (k === "ok" && n < cap))) {
           req.accept();
           n++;
+          if (natReq) natN++;
         } else {
           req.reject();
           this.allyRejects++;
@@ -2501,6 +2547,8 @@ export class BotExecution extends NationExecution {
   public lapseStrikes = 0;
   public lapseGuarded = 0;
   public lapseCapped = 0;
+  public lapseNuked = 0;
+  private lapseNukedSeen = new Set<Player>();
   /** lapseCap: troops out on attacks, this send included, stay under lapseCap x our whole army. */
   public capStrike(me: Player, send: number): number {
     if (this.params.lapseCap <= 0) return send;
@@ -2536,6 +2584,11 @@ export class BotExecution extends NationExecution {
         continue;
       }
       if (!me.sharesBorderWith(o) || o.troops() >= this.params.lapseStrike * me.troops()) continue;
+      if (this.params.lapseNuke > 0 &&
+        o.troops() * (1 + this.params.lapseNuke * this.nukeExposure(me, o)) >= this.params.lapseStrike * me.troops()) {
+        if (!this.lapseNukedSeen.has(o)) { this.lapseNukedSeen.add(o); this.lapseNuked++; }
+        continue;
+      }
       if (me.outgoingAttacks().some((a) => a.target() === o)) {
         this.lapsed.delete(o);
         continue;
@@ -2984,8 +3037,10 @@ export class BotExecution extends NationExecution {
     this.goldPrev = gold;
     this.mirvReserve = 0; // set again below while banking (a new bank rebases the deadline)
     const cfg = g.config();
+    this.mirvGuarding = false;
     if (cfg.isUnitDisabled(UnitType.MIRV) || cfg.isUnitDisabled(UnitType.MissileSilo)) { this.mirvSaving = null; return; }
-    let pick: { T: Player; eta: number; mode?: "duel" | "endgame" | "pre" } | null = this.mirvThreat(me);
+    if (this.params.mirvGuard > 0 && this.mirvCounterTick(me, ticks, gold)) return;
+    let pick: { T: Player; eta: number; mode?: "duel" | "endgame" | "pre" | "guard" } | null = this.mirvThreat(me);
     if (pick === null && this.params.mirvDuel > 0 && ticks >= 5 * 600) pick = this.mirvDuelTarget(me);
     if (pick === null && this.params.mirvRich > 0) {
       const T = this.mirvRichTarget(me, gold, ticks);
@@ -2993,10 +3048,18 @@ export class BotExecution extends NationExecution {
     }
     if (this.params.mirvPre > 0) this.trackRivalGold(me);
     if (pick === null && this.params.mirvPre > 0) pick = this.mirvPreTarget(me);
+    if (pick === null && this.params.mirvGuard > 0) pick = this.mirvGuardPick(me);
     if (pick === null) { this.mirvSaving = null; return; }
     const T = pick.T;
     const mirvCost = Number(g.unitInfo(UnitType.MIRV).cost(g, me));
     const silos = me.unitCount(UnitType.MissileSilo);
+    // Guard: hold the fund (a silo first if we have none), never launch from it.
+    if (pick.mode === "guard") {
+      this.mirvSaving = T;
+      this.mirvGuarding = true;
+      this.mirvReserve = mirvCost + (silos === 0 ? Number(g.unitInfo(UnitType.MissileSilo).cost(g, me)) : 0);
+      return;
+    }
     if (silos > 0 && gold >= mirvCost && ticks - this.mirvAt >= 600) {
       const mb = (this as any).mirvBehavior;
       const center = calculateTerritoryCenter(g, T);
@@ -3032,6 +3095,64 @@ export class BotExecution extends NationExecution {
   }
   public mirvDeadline = -1;
   public mirvReserve = 0;
+  // mirvGuard. Loss traces (2026-10-24, fin109/89/74/151/54): as land leader
+  // with 125-250 City levels and ~1M gold we take a MIRV at 20-26m (troops
+  // -85-93%), the MIRVer's waves take the land, and it wins 6/9. With the
+  // fund banked, our MIRV answers it while its warheads fly: its troops and
+  // attacks drop to ~3% of max too, and the follow-up (mirvR, craterPush)
+  // takes its land.
+  public mirvGuarding = false;
+  public mirvCounters = 0;
+  private mirvSeen = new Map<Player, number>();
+  /** Fire our MIRV at the sender of a MIRV aimed at our land (seen in the last 2 min). */
+  private mirvCounterTick(me: Player, ticks: number, gold: number): boolean {
+    const g = this.botGame;
+    for (const u of g.units(UnitType.MIRV)) {
+      const t = u.targetTile();
+      if (u.owner() !== me && t !== undefined && g.owner(t) === me) this.mirvSeen.set(u.owner(), ticks);
+    }
+    for (const [p, at] of this.mirvSeen) if (ticks - at > 1200 || !p.isAlive()) this.mirvSeen.delete(p);
+    if (this.mirvSeen.size === 0 || me.unitCount(UnitType.MissileSilo) === 0 || ticks - this.mirvAt < 600) return false;
+    if (gold < Number(g.unitInfo(UnitType.MIRV).cost(g, me))) return false;
+    let S: Player | null = null;
+    for (const [p] of this.mirvSeen) {
+      if (me.isFriendly(p) || mirvLeakShare(g, me, p) < 0.25) continue;
+      if (S === null || p.numTilesOwned() > S.numTilesOwned()) S = p;
+    }
+    if (S === null) return false;
+    const mb = (this as any).mirvBehavior;
+    const center = calculateTerritoryCenter(g, S);
+    if (!mb || typeof mb.maybeSendMIRV !== "function" || center === null || me.canBuild(UnitType.MIRV, center) === false) return false;
+    mb.maybeSendMIRV(S);
+    this.mirvsSent++;
+    this.mirvCounters++;
+    this.mirvSeen.delete(S);
+    this.mirvR = S;
+    this.mirvAt = ticks;
+    this.mirvLanded = null;
+    this.mirvSaving = null;
+    return true;
+  }
+  /** Guard target: we lead (land or City levels) with >= mirvGuard of the land; T = the richest silo-holding non-friend. */
+  private mirvGuardPick(me: Player): { T: Player; eta: number; mode: "guard" } | null {
+    const g = this.botGame;
+    const land = Math.max(1, g.numLandTiles() - g.numTilesWithFallout());
+    if (me.numTilesOwned() < this.params.mirvGuard * land) return null;
+    const levels = (p: Player) => p.units(UnitType.City).reduce((s, u) => s + u.level(), 0);
+    const myLv = levels(me);
+    let topLand = 0;
+    let topLv = 0;
+    let T: Player | null = null;
+    for (const p of g.players()) {
+      if (p === me || !p.isAlive() || (p.type() !== PlayerType.Human && p.type() !== PlayerType.Nation)) continue;
+      topLand = Math.max(topLand, p.numTilesOwned());
+      topLv = Math.max(topLv, levels(p));
+      if (me.isFriendly(p) || me.isOnSameTeam(p) || p.unitCount(UnitType.MissileSilo) === 0) continue;
+      if (T === null || p.gold() > T.gold()) T = p;
+    }
+    if (T === null || (me.numTilesOwned() <= topLand && myLv <= topLv)) return null;
+    return { T, eta: Infinity, mode: "guard" };
+  }
   // mirvPre. v0.35 leader deaths (fin167/189/198): the rich stand-in next to
   // us banks 15-25M for a MIRV while our cities keep us near 1M, then MIRVs
   // us and takes the land with a strike. Humans do the same to a clear
@@ -3120,6 +3241,24 @@ export class BotExecution extends NationExecution {
     const t = this.botGame.ticks();
     return t - this.samDueAt <= 60 && t - this.samDueFrom <= this.params.samSave * 600;
   }
+  private heatSeen = new Set<number>();
+  private heatLog: { at: number; w: number }[] = [];
+  /** samHeat: weighted count of enemy bombs aimed at our land in the last 5 minutes. */
+  private nukeHeat(me: Player): number {
+    if (this.params.samHeat <= 0) return 0;
+    const g = this.botGame;
+    const t = g.ticks();
+    for (const u of g.units(UnitType.AtomBomb, UnitType.HydrogenBomb)) {
+      if (this.heatSeen.has(u.id())) continue;
+      const o = u.owner();
+      const tt = u.targetTile();
+      if (o === me || tt === undefined || me.isFriendly(o) || !this.landNear(me, tt, 30)) continue;
+      this.heatSeen.add(u.id());
+      this.heatLog.push({ at: t, w: u.type() === UnitType.HydrogenBomb ? 2 : 1 });
+    }
+    this.heatLog = this.heatLog.filter((e) => t - e.at <= 3000);
+    return this.heatLog.reduce((s, e) => s + e.w, 0);
+  }
   private samClusterTick(me: Player) {
     const g = this.botGame;
     const cfg = g.config();
@@ -3149,7 +3288,8 @@ export class BotExecution extends NationExecution {
       }
       if (v > bestV) { bestV = v; bx = x / v; by = y / v; }
     }
-    if (bestV < this.params.samCluster) { this.samDueFrom = -1; return; }
+    const bar = this.params.samCluster / (1 + this.params.samHeat * this.nukeHeat(me));
+    if (bestV < bar) { this.samDueFrom = -1; return; }
     if (short) {
       const t = g.ticks();
       if (this.samDueFrom < 0) this.samDueFrom = t;
@@ -3254,6 +3394,11 @@ export class BotExecution extends NationExecution {
       return stack(type, true);
     };
   }
+  /** mirvGuard: warships and nukes may spend while gold is 5M (a Hydrogen bomb) above the fund. */
+  private guardSpare(): boolean {
+    const me: Player | null = (this as any).player ?? null;
+    return this.mirvGuarding && me !== null && Number(me.gold()) >= this.mirvReserve + 5_000_000;
+  }
   private patchMirvLock(self: any) {
     self.__mirvLock = true;
     const sb = self.structureBehavior;
@@ -3261,7 +3406,7 @@ export class BotExecution extends NationExecution {
     sb.handleStructures = () => {
       if (this.mirvSaving === null) return origS();
       if (sb.player.unitCount(UnitType.MissileSilo) === 0) return sb.maybeSpawnStructure(UnitType.MissileSilo);
-      if (this.params.mirvSpend <= 0) return false;
+      if (this.params.mirvSpend <= 0 && !this.mirvGuarding) return false;
       // mirvSpend: the AI sees only the gold above the reserve (real gold
       // checks in canBuild/upgrade still use the full amount).
       const me = sb.player;
@@ -3277,12 +3422,12 @@ export class BotExecution extends NationExecution {
     const wb = self.warshipBehavior;
     if (wb && typeof wb.maybeSpawnWarship === "function") {
       const origW = wb.maybeSpawnWarship.bind(wb);
-      wb.maybeSpawnWarship = () => (this.mirvSaving === null ? origW() : false);
+      wb.maybeSpawnWarship = () => (this.mirvSaving === null || this.guardSpare() ? origW() : false);
     }
     const nb = self.nukeBehavior;
     if (nb && typeof nb.maybeSendNuke === "function") {
       const origN = nb.maybeSendNuke.bind(nb);
-      nb.maybeSendNuke = (...a: any[]) => (this.mirvSaving === null ? origN(...a) : undefined);
+      nb.maybeSendNuke = (...a: any[]) => (this.mirvSaving === null || this.guardSpare() ? origN(...a) : undefined);
     }
   }
 

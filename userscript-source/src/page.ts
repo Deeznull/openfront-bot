@@ -15,6 +15,7 @@
 import { GameUpdateType } from "ofenums";
 import { type FeedEntry, feedEntry, feedTransfers, findHashes } from "./feed";
 import { FARM_TWEAKS } from "./farm-params";
+import { FfaClaims } from "./ffa-claim";
 
 declare function __ofbotShadowMain(): void;
 declare const __OFBOT_VERSION__: string;
@@ -414,7 +415,7 @@ function startShadow(c: GameCtx, onPage: boolean) {
 }
 
 /**
- * Older engines put the map files in the init message. Newer ones (openfront.io
+ * Older engines put the map files in the init message. Newer ones (the live site,
  * v0.34) send only `cdnBase` and the worker fetches the map itself; the shadow
  * does the same, with the page's asset manifest for the hashed file names.
  */
@@ -838,6 +839,7 @@ function farmSpeedUp() {
 }
 
 function farmLeave() {
+  claims.drop(Date.now());
   settings.farmGames++;
   saveSettings();
   note(`Farm: game ${settings.farmGames} done — next one`);
@@ -936,18 +938,43 @@ const FARM_PUBLIC_MAX_MS = 3 * 60 * 60_000;
 let farmAwayAt = 0;
 let farmJoinAt = 0;
 
+// Each bot tab on one account joins a different FFA game (ffa-claim.ts).
+const claims = new FfaClaims(localStorage, Math.random().toString(36).slice(2));
+let claimWaitNoted = false;
+// Keep our claim alive while in the lobby or the game.
+setInterval(() => {
+  if (farmOnHome() && !(document.querySelector("game-mode-selector") as any)?.inLobby) return;
+  claims.keepAlive(Date.now());
+}, 10_000);
+addEventListener("pagehide", () => claims.drop(Date.now()));
+
 function farmJoinPublic(now: number) {
   const sel = document.querySelector("game-mode-selector") as any;
   if (!sel || sel.inLobby || now < farmJoinAt) return;
-  const lobby = sel.lobbies?.games?.ffa?.[0];
-  if (!lobby || typeof sel.validateAndJoin !== "function") return;
-  farmJoinAt = now + 30_000; // retry if this join doesn't lead to a lobby
-  note(`Farm: today's ${soloPerDay} XP solo games are done — joining a public FFA lobby`);
-  try {
-    sel.validateAndJoin(lobby);
-  } catch (e) {
-    note(`Farm: couldn't join a public lobby (${String(e)})`);
-  }
+  const lobbies = sel.lobbies?.games?.ffa;
+  if (!Array.isArray(lobbies) || typeof sel.validateAndJoin !== "function") return;
+  const pick = () => {
+    const lobby = claims.claim(lobbies, Date.now());
+    if (!lobby) {
+      if (!claimWaitNoted) note("Farm: every open FFA lobby is taken by another bot tab — waiting for the next one");
+      claimWaitNoted = true;
+      farmJoinAt = Date.now() + 3000;
+      return;
+    }
+    claimWaitNoted = false;
+    farmJoinAt = Date.now() + 30_000; // retry if this join doesn't lead to a lobby
+    note(`Farm: today's ${soloPerDay} XP solo games are done — joining a public FFA lobby`);
+    try {
+      sel.validateAndJoin(lobby);
+    } catch (e) {
+      note(`Farm: couldn't join a public lobby (${String(e)})`);
+    }
+  };
+  farmJoinAt = now + 30_000; // no second pick while the lock is pending
+  // The lock makes read-claim-write atomic across tabs.
+  const locks = (navigator as any).locks;
+  if (locks?.request) void locks.request("ofbot-ffa-claim", pick).catch(() => (farmJoinAt = 0));
+  else pick();
 }
 
 function farmPublicTick(c: GameCtx, now: number) {
