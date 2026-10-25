@@ -15,7 +15,7 @@
 import { GameUpdateType } from "ofenums";
 import { type FeedEntry, feedEntry, feedTransfers, findHashes } from "./feed";
 import { FARM_TWEAKS } from "./farm-params";
-import { FfaClaims, TAB_LOCK } from "./ffa-claim";
+import { FfaClaims, LockClaims } from "./ffa-claim";
 
 declare function __ofbotShadowMain(): void;
 declare const __OFBOT_VERSION__: string;
@@ -839,7 +839,8 @@ function farmSpeedUp() {
 }
 
 function farmLeave() {
-  claims.drop(Date.now());
+  lockClaims?.drop();
+  claims.drop();
   settings.farmGames++;
   saveSettings();
   note(`Farm: game ${settings.farmGames} done — next one`);
@@ -938,36 +939,20 @@ const FARM_PUBLIC_MAX_MS = 3 * 60 * 60_000;
 let farmAwayAt = 0;
 let farmJoinAt = 0;
 
-// Each bot tab on one account joins a different FFA game (ffa-claim.ts).
+// Each bot tab on one account joins a different FFA game (ffa-claim.ts):
+// a Web Lock per game, or claims in localStorage where there are no locks.
+const locks = (navigator as any).locks;
+const lockClaims = locks?.request ? new LockClaims(locks) : null;
 const claims = new FfaClaims(localStorage, Math.random().toString(36).slice(2));
 let claimWaitNoted = false;
-const locks = (navigator as any).locks;
-// Held for the tab's whole life: other tabs see our claims as live while it is.
-if (locks?.request) void locks.request(TAB_LOCK + claims.tab, () => new Promise(() => {})).catch(() => {});
-// Every read-change-write of the claims runs under this lock, so tabs can't
-// overwrite each other's claims.
-function withClaims(f: () => void | Promise<void>): Promise<void> {
-  if (!locks?.request) return Promise.resolve(f());
-  return locks.request("ofbot-ffa-claim", f);
-}
-// Tabs holding their tab lock (null: unknown, claims then lapse by time).
-async function liveTabs(): Promise<Set<string> | null> {
-  try {
-    const q = await locks?.query?.();
-    if (!q) return null;
-    const live = new Set<string>();
-    for (const l of q.held ?? []) if (typeof l?.name === "string" && l.name.startsWith(TAB_LOCK)) live.add(l.name.slice(TAB_LOCK.length));
-    return live;
-  } catch {
-    return null;
-  }
-}
-// Keep our claim fresh while in the lobby or the game (the no-locks expiry).
+// Keep a localStorage claim alive while in the lobby or the game (a lock
+// lasts as long as the tab by itself).
 setInterval(() => {
+  if (lockClaims) return;
   if (farmOnHome() && !(document.querySelector("game-mode-selector") as any)?.inLobby) return;
-  void withClaims(() => claims.keepAlive(Date.now())).catch(() => {});
+  claims.keepAlive(Date.now());
 }, 10_000);
-addEventListener("pagehide", () => claims.drop(Date.now()));
+addEventListener("pagehide", () => claims.drop());
 
 function farmJoinPublic(now: number) {
   const sel = document.querySelector("game-mode-selector") as any;
@@ -975,7 +960,7 @@ function farmJoinPublic(now: number) {
   const lobbies = sel.lobbies?.games?.ffa;
   if (!Array.isArray(lobbies) || typeof sel.validateAndJoin !== "function") return;
   const pick = async () => {
-    const lobby = claims.claim(lobbies, Date.now(), await liveTabs());
+    const lobby = lockClaims ? await lockClaims.claim(lobbies) : claims.claim(lobbies, Date.now());
     if (!lobby) {
       if (!claimWaitNoted) note("Farm: every open FFA lobby is taken by another bot tab — waiting for the next one");
       claimWaitNoted = true;
@@ -991,8 +976,8 @@ function farmJoinPublic(now: number) {
       note(`Farm: couldn't join a public lobby (${String(e)})`);
     }
   };
-  farmJoinAt = now + 30_000; // no second pick while the lock is pending
-  void withClaims(pick).catch(() => (farmJoinAt = 0));
+  farmJoinAt = now + 30_000; // no second pick while one is pending
+  void pick().catch(() => (farmJoinAt = 0));
 }
 
 function farmPublicTick(c: GameCtx, now: number) {
