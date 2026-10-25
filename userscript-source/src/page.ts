@@ -15,7 +15,7 @@
 import { GameUpdateType } from "ofenums";
 import { type FeedEntry, feedEntry, feedTransfers, findHashes } from "./feed";
 import { FARM_TWEAKS } from "./farm-params";
-import { FfaClaims, LockClaims } from "./ffa-claim";
+import { FfaClaims, holdLock, JOIN_WAIT_MS, joinable, LockClaims, SKIP_MS } from "./ffa-claim";
 
 declare function __ofbotShadowMain(): void;
 declare const __OFBOT_VERSION__: string;
@@ -841,8 +841,20 @@ function farmSpeedUp() {
 function farmLeave() {
   lockClaims?.drop();
   claims.drop();
-  settings.farmGames++;
-  saveSettings();
+  // Other bot tabs count games in the same saved settings: add ours to the
+  // stored count, and don't write this tab's older copy of the rest back.
+  let stored: any = {};
+  try {
+    stored = JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? "{}") ?? {};
+  } catch {
+    /* storage off */
+  }
+  settings.farmGames = Math.max(settings.farmGames, Number(stored.farmGames) || 0) + 1;
+  try {
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify({ ...settings, ...stored, farmGames: settings.farmGames }));
+  } catch {
+    /* ignore */
+  }
   note(`Farm: game ${settings.farmGames} done — next one`);
   // A full load of the homepage, not the win modal's in-page exit: after a
   // death that exit left the game HUD drawn over the homepage and the next
@@ -870,6 +882,13 @@ function farmTick() {
       return;
     }
     soloCapNoted = false;
+    // Several bot tabs on one account: one plays the day's solo games, the
+    // others play public FFA games meanwhile (or wait, without public games).
+    const turn = soloTurn(now);
+    if (!turn) {
+      if (turn === false && settings.farmPublic) farmJoinPublic(now);
+      return;
+    }
     // A few seconds on the homepage first: time to uncheck Farm, and for the
     // page to finish loading its components.
     if (!farmStartAt) farmStartAt = now + 5000;
@@ -954,11 +973,48 @@ setInterval(() => {
 }, 10_000);
 addEventListener("pagehide", () => claims.drop());
 
+// One tab at a time plays the solo games: the one holding this lock.
+const SOLO_LOCK = "ofbot-solo";
+let soloLock: "no" | "asking" | "held" = "no";
+let soloAskAt = 0;
+/** Whether this tab may play solo games now (null: still asking). */
+function soloTurn(now: number): boolean | null {
+  if (!lockClaims || soloLock === "held") return true;
+  if (soloLock === "asking") return null;
+  if (now < soloAskAt) return false;
+  soloLock = "asking";
+  void holdLock(locks, SOLO_LOCK).then((release) => {
+    soloLock = release ? "held" : "no";
+    soloAskAt = Date.now() + 10_000;
+  });
+  return null;
+}
+
+// A join that hasn't led into its lobby yet, and lobbies whose join failed.
+let joinPending: { id: string; at: number } | null = null;
+const joinSkip = new Map<string, number>();
+
 function farmJoinPublic(now: number) {
   const sel = document.querySelector("game-mode-selector") as any;
-  if (!sel || sel.inLobby || now < farmJoinAt) return;
-  const lobbies = sel.lobbies?.games?.ffa;
-  if (!Array.isArray(lobbies) || typeof sel.validateAndJoin !== "function") return;
+  if (!sel) return;
+  if (sel.inLobby) {
+    joinPending = null;
+    return;
+  }
+  if (joinPending) {
+    if (now - joinPending.at < JOIN_WAIT_MS) return;
+    note(`Farm: joining lobby ${joinPending.id} didn't work — trying another one`);
+    joinSkip.set(joinPending.id, now + SKIP_MS);
+    joinPending = null;
+    lockClaims?.drop();
+    claims.drop();
+    if (sel.showTrustRequired) sel.showTrustRequired = false;
+    farmJoinAt = 0;
+  }
+  if (now < farmJoinAt) return;
+  const all = sel.lobbies?.games?.ffa;
+  if (!Array.isArray(all) || typeof sel.validateAndJoin !== "function") return;
+  const lobbies = joinable(all, !!sel.viewerTrusted, joinSkip, now);
   const pick = async () => {
     const lobby = lockClaims ? await lockClaims.claim(lobbies) : claims.claim(lobbies, Date.now());
     if (!lobby) {
@@ -968,8 +1024,8 @@ function farmJoinPublic(now: number) {
       return;
     }
     claimWaitNoted = false;
-    farmJoinAt = Date.now() + 30_000; // retry if this join doesn't lead to a lobby
-    note(`Farm: today's ${soloPerDay} XP solo games are done — joining a public FFA lobby`);
+    joinPending = { id: String(lobby.gameID), at: Date.now() };
+    note(`Farm: joining public FFA lobby ${lobby.gameID}`);
     try {
       sel.validateAndJoin(lobby);
     } catch (e) {

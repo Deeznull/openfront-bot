@@ -17,10 +17,41 @@ export const CLAIMS_KEY = "ofbot.ffaClaims";
 export const GAME_LOCK = "ofbot-ffa-game-";
 export const CLAIM_MS = 45_000;
 
-type Lobby = { gameID?: string };
+type Lobby = { gameID?: string; numClients?: number; gameConfig?: { trusted?: boolean; maxPlayers?: number } };
 
 export interface Locks {
   request(name: string, opts: { ifAvailable: boolean }, cb: (lock: unknown) => unknown): Promise<unknown>;
+}
+
+/** A Web Lock if no other tab holds it: its release, else null. Held until released or the page dies. */
+export function holdLock(locks: Locks, name: string): Promise<(() => void) | null> {
+  return new Promise((resolve) => {
+    locks
+      .request(name, { ifAvailable: true }, (lock) => {
+        if (!lock) return resolve(null);
+        return new Promise<void>((done) => resolve(done));
+      })
+      .catch(() => resolve(null));
+  });
+}
+
+// The live list (2026-10-25) has lobbies only trusted accounts may join
+// (validateAndJoin then just opens a modal) and lobbies that fill up, and a
+// join can fail by itself (turnstile, a lobby that closed). A tab skips those,
+// and when its join doesn't lead into the lobby it gives the claim up and
+// skips that lobby for a while instead of retrying it.
+export const JOIN_WAIT_MS = 15_000;
+export const SKIP_MS = 5 * 60_000;
+
+/** The lobbies this tab could join, in the list's order. */
+export function joinable<L extends Lobby>(lobbies: L[], trusted: boolean, skip: Map<string, number>, now: number): L[] {
+  for (const [id, until] of skip) if (now >= until) skip.delete(id);
+  return lobbies.filter((l) => {
+    if (!l?.gameID || skip.has(l.gameID)) return false;
+    if (l.gameConfig?.trusted === true && !trusted) return false;
+    const max = Number(l.gameConfig?.maxPlayers);
+    return !(max > 0 && Number(l.numClients) >= max);
+  });
 }
 
 export class LockClaims {
@@ -28,25 +59,13 @@ export class LockClaims {
   private release: (() => void) | null = null;
   constructor(private locks: Locks) {}
 
-  // The lock on one gameID if no other tab holds it: its release, else null.
-  private take(id: string): Promise<(() => void) | null> {
-    return new Promise((resolve) => {
-      this.locks
-        .request(GAME_LOCK + id, { ifAvailable: true }, (lock) => {
-          if (!lock) return resolve(null);
-          return new Promise<void>((done) => resolve(done));
-        })
-        .catch(() => resolve(null));
-    });
-  }
-
   /** The first lobby no other tab holds, now held by this tab (null: all taken). */
   async claim<L extends Lobby>(lobbies: L[]): Promise<L | null> {
     for (const l of lobbies) {
       const id = l?.gameID;
       if (!id) continue;
       if (id === this.mine) return l;
-      const release = await this.take(id);
+      const release = await holdLock(this.locks, GAME_LOCK + id);
       if (!release) continue;
       this.drop();
       this.mine = id;

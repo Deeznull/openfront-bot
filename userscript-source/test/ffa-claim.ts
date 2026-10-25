@@ -1,6 +1,6 @@
 // npx tsx test/ffa-claim.ts — bot tabs on one account claim different FFA lobbies.
 import assert from "node:assert/strict";
-import { CLAIM_MS, FfaClaims, LockClaims, type Locks } from "../src/ffa-claim";
+import { CLAIM_MS, FfaClaims, holdLock, joinable, LockClaims, type Locks } from "../src/ffa-claim";
 
 // Web Locks with ifAvailable, shared by every tab of the origin.
 const held = new Set<string>();
@@ -67,6 +67,32 @@ function storeTests() {
   assert.equal(bad.claim(lobbies, 0)?.gameID, "A");
 }
 
+async function joinableTests() {
+  const live = [
+    { gameID: "T", numClients: 2, gameConfig: { trusted: true, maxPlayers: 50 } },
+    { gameID: "F", numClients: 25, gameConfig: { maxPlayers: 25 } },
+    { gameID: "S", numClients: 1, gameConfig: { maxPlayers: 40 } },
+    { gameID: "O", numClients: 3, gameConfig: { maxPlayers: 60 } },
+    { gameID: "N" },
+  ];
+  const skip = new Map([["S", 1000]]);
+  // Untrusted: no trusted-only lobby, no full one, no skipped one.
+  assert.deepEqual(joinable(live, false, skip, 0).map((l) => l.gameID), ["O", "N"]);
+  assert.deepEqual(joinable(live, true, skip, 0).map((l) => l.gameID), ["T", "O", "N"]);
+  // A skip lapses after its time.
+  assert.deepEqual(joinable(live, false, skip, 1000).map((l) => l.gameID), ["S", "O", "N"]);
+  assert.equal(skip.size, 0);
+  // holdLock: one holder at a time, free again after release.
+  held.clear();
+  const r1 = await holdLock(locks, "ofbot-solo");
+  assert.ok(r1);
+  assert.equal(await holdLock(locks, "ofbot-solo"), null);
+  r1!();
+  await tick();
+  assert.ok(await holdLock(locks, "ofbot-solo"));
+}
+
 await lockTests();
 storeTests();
+await joinableTests();
 console.log("ffa-claim: ok");
