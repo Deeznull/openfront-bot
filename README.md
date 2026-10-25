@@ -1,6 +1,6 @@
 # OpenFront bot
 
-A code bot/script for the OpenFront game, trained by running many headless games on CPU and keeping only the changes that win more. It also comes with a Tampermonkey userscript that lets the bot play in the game in your browser.
+A code bot/script for the OpenFront game which works at client side, trained by running many headless games on CPU and keeping only the changes that win more. It also comes with a Tampermonkey userscript that lets the bot play in the game in your browser.
 
 Developed to beat human players in online games. So far it has only been tested against the game's Impossible AI, not yet in online games. To contribute, see [below](#contributing).
 
