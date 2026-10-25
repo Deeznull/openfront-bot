@@ -27,6 +27,7 @@ This repository does not include the game's source code. The game can be downloa
 - **Modes:** the general mode plays online games. Solo games on Easy switch to a farm mode by themselves.
 - **Farm option:** plays the 5 Easy solo games per UTC day that give XP, at Max speed, each held until 30+ game minutes for the most XP. Then it joins public FFA games; untick **…then public FFA games** to stop after the solo games.
 - **Panel:** **–/+** folds the panel; **Options** hides the checkboxes.
+- **Multi-tab bypass:** the game's multi-tab detector (the pop-up that freezes you for 10s when it sees another tab) is neutralized in every mode, public included — so you can run the bot in several tabs at once. The detector is purely client-side, and the IP/device/"reported" it shows are fake values generated locally, never sent anywhere.
 
 The script is made for game version v0.35.2 (since script 0.6.1; 0.6.0 was made for v0.35.0; older 0.5.x scripts were made for v0.34.24 and don't work on v0.35). On newer versions it keeps playing by following the live game, until a version changes too much; then it must be rebuilt (see `userscript-source/README.md`). Installed copies update themselves when a rebuilt script is pushed here.
 
