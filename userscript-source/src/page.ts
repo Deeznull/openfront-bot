@@ -15,7 +15,7 @@
 import { GameUpdateType } from "ofenums";
 import { type FeedEntry, feedEntry, feedTransfers, findHashes } from "./feed";
 import { FARM_TWEAKS } from "./farm-params";
-import { FfaClaims } from "./ffa-claim";
+import { FfaClaims, TAB_LOCK } from "./ffa-claim";
 
 declare function __ofbotShadowMain(): void;
 declare const __OFBOT_VERSION__: string;
@@ -941,10 +941,31 @@ let farmJoinAt = 0;
 // Each bot tab on one account joins a different FFA game (ffa-claim.ts).
 const claims = new FfaClaims(localStorage, Math.random().toString(36).slice(2));
 let claimWaitNoted = false;
-// Keep our claim alive while in the lobby or the game.
+const locks = (navigator as any).locks;
+// Held for the tab's whole life: other tabs see our claims as live while it is.
+if (locks?.request) void locks.request(TAB_LOCK + claims.tab, () => new Promise(() => {})).catch(() => {});
+// Every read-change-write of the claims runs under this lock, so tabs can't
+// overwrite each other's claims.
+function withClaims(f: () => void | Promise<void>): Promise<void> {
+  if (!locks?.request) return Promise.resolve(f());
+  return locks.request("ofbot-ffa-claim", f);
+}
+// Tabs holding their tab lock (null: unknown, claims then lapse by time).
+async function liveTabs(): Promise<Set<string> | null> {
+  try {
+    const q = await locks?.query?.();
+    if (!q) return null;
+    const live = new Set<string>();
+    for (const l of q.held ?? []) if (typeof l?.name === "string" && l.name.startsWith(TAB_LOCK)) live.add(l.name.slice(TAB_LOCK.length));
+    return live;
+  } catch {
+    return null;
+  }
+}
+// Keep our claim fresh while in the lobby or the game (the no-locks expiry).
 setInterval(() => {
   if (farmOnHome() && !(document.querySelector("game-mode-selector") as any)?.inLobby) return;
-  claims.keepAlive(Date.now());
+  void withClaims(() => claims.keepAlive(Date.now())).catch(() => {});
 }, 10_000);
 addEventListener("pagehide", () => claims.drop(Date.now()));
 
@@ -953,8 +974,8 @@ function farmJoinPublic(now: number) {
   if (!sel || sel.inLobby || now < farmJoinAt) return;
   const lobbies = sel.lobbies?.games?.ffa;
   if (!Array.isArray(lobbies) || typeof sel.validateAndJoin !== "function") return;
-  const pick = () => {
-    const lobby = claims.claim(lobbies, Date.now());
+  const pick = async () => {
+    const lobby = claims.claim(lobbies, Date.now(), await liveTabs());
     if (!lobby) {
       if (!claimWaitNoted) note("Farm: every open FFA lobby is taken by another bot tab — waiting for the next one");
       claimWaitNoted = true;
@@ -971,10 +992,7 @@ function farmJoinPublic(now: number) {
     }
   };
   farmJoinAt = now + 30_000; // no second pick while the lock is pending
-  // The lock makes read-claim-write atomic across tabs.
-  const locks = (navigator as any).locks;
-  if (locks?.request) void locks.request("ofbot-ffa-claim", pick).catch(() => (farmJoinAt = 0));
-  else pick();
+  void withClaims(pick).catch(() => (farmJoinAt = 0));
 }
 
 function farmPublicTick(c: GameCtx, now: number) {
