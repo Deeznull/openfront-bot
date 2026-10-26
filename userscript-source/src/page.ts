@@ -267,6 +267,28 @@ class HookedWorker extends RealWorker {
 }
 W.Worker = HookedWorker;
 
+// -------------------------------------------------------- multi-tab lock
+// The game's MultiTabDetector keeps a "multi-tab-lock" item in localStorage
+// and slaps a 10s penalty on the tab whenever it sees another owner's lock.
+// We don't want it: delete the key whenever present and hide it from the
+// detector so getItem never returns a foreign lock and writes are dropped.
+try {
+  const LOCK_KEY = "multi-tab-lock";
+  const ls = window.localStorage;
+  const proto = Object.getPrototypeOf(ls) as Storage;
+  const get = proto.getItem.bind(ls);
+  const set = proto.setItem.bind(ls);
+  const rem = proto.removeItem.bind(ls);
+  rem(LOCK_KEY);
+  ls.getItem = (k: string) => (k === LOCK_KEY ? null : get(k));
+  ls.setItem = (k: string, v: string) => { if (k !== LOCK_KEY) set(k, v); };
+  ls.removeItem = (k: string) => rem(k);
+  // Stray lock written before we loaded, or by another tab, gets cleared too.
+  setInterval(() => { if (get(LOCK_KEY) !== null) rem(LOCK_KEY); }, 500);
+} catch (e) {
+  console.warn("[ofbot] multi-tab-lock neutralize failed", e);
+}
+
 function hook(w: Worker) {
   const realPost = RealWorker.prototype.postMessage.bind(w) as (m: any, t?: any) => void;
   const realTerminate = RealWorker.prototype.terminate.bind(w);
@@ -415,7 +437,7 @@ function startShadow(c: GameCtx, onPage: boolean) {
 }
 
 /**
- * Older engines put the map files in the init message. Newer ones (the live site,
+ * Older engines put the map files in the init message. Newer ones (openfront.io
  * v0.34) send only `cdnBase` and the worker fetches the map itself; the shadow
  * does the same, with the page's asset manifest for the hashed file names.
  */
@@ -994,6 +1016,20 @@ function soloTurn(now: number): boolean | null {
 let joinPending: { id: string; at: number } | null = null;
 const joinSkip = new Map<string, number>();
 
+// The server refused the join (it started just before we got in, or filled):
+// skip that lobby and pick another at once instead of waiting out JOIN_WAIT_MS.
+document.addEventListener("leave-lobby", (e: Event) => {
+  const d = (e as CustomEvent).detail;
+  if (!settings.farmPublic || (d?.cause !== "game-started" && d?.cause !== "full-lobby")) return;
+  const id = String(d.lobby ?? joinPending?.id ?? "");
+  if (id) joinSkip.set(id, Date.now() + SKIP_MS);
+  note(`Farm: lobby ${id} ${d.cause === "full-lobby" ? "filled up" : "started"} before we got in — trying another one`);
+  joinPending = null;
+  lockClaims?.drop();
+  claims.drop();
+  farmJoinAt = Date.now() + 1000;
+});
+
 function farmJoinPublic(now: number) {
   const sel = document.querySelector("game-mode-selector") as any;
   if (!sel) return;
@@ -1014,7 +1050,8 @@ function farmJoinPublic(now: number) {
   if (now < farmJoinAt) return;
   const all = sel.lobbies?.games?.ffa;
   if (!Array.isArray(all) || typeof sel.validateAndJoin !== "function") return;
-  const lobbies = joinable(all, !!sel.viewerTrusted, joinSkip, now);
+  const offset = Number(sel.serverTimeOffset);
+  const lobbies = joinable(all, !!sel.viewerTrusted, joinSkip, now, Date.now() + (Number.isFinite(offset) ? offset : 0));
   const pick = async () => {
     const lobby = lockClaims ? await lockClaims.claim(lobbies) : claims.claim(lobbies, Date.now());
     if (!lobby) {

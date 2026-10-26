@@ -17,7 +17,7 @@ export const CLAIMS_KEY = "ofbot.ffaClaims";
 export const GAME_LOCK = "ofbot-ffa-game-";
 export const CLAIM_MS = 45_000;
 
-type Lobby = { gameID?: string; numClients?: number; gameConfig?: { trusted?: boolean; maxPlayers?: number } };
+type Lobby = { gameID?: string; numClients?: number; startsAt?: number; gameConfig?: { trusted?: boolean; maxPlayers?: number } };
 
 export interface Locks {
   request(name: string, opts: { ifAvailable: boolean }, cb: (lock: unknown) => unknown): Promise<unknown>;
@@ -43,14 +43,31 @@ export function holdLock(locks: Locks, name: string): Promise<(() => void) | nul
 export const JOIN_WAIT_MS = 15_000;
 export const SKIP_MS = 5 * 60_000;
 
-/** The lobbies this tab could join, in the list's order. */
-export function joinable<L extends Lobby>(lobbies: L[], trusted: boolean, skip: Map<string, number>, now: number): L[] {
+// A join lands seconds after the click (auth, turnstile, the socket; longer in
+// a background tab), and the server refuses a player whose join comes just
+// after the start or into a full lobby ("You didn't enter the game in time",
+// live 2026-10-26). So a tab skips the active lobby once it starts within
+// MIN_LEFT_MS, and lobbies about to fill (a full lobby starts at once); the
+// queued lobbies (no startsAt yet) start later and are safe.
+export const MIN_LEFT_MS = 20_000;
+export const MIN_FREE = 2;
+
+/** The lobbies this tab could join, in the list's order. serverNow: the server's clock now (ms). */
+export function joinable<L extends Lobby>(
+  lobbies: L[],
+  trusted: boolean,
+  skip: Map<string, number>,
+  now: number,
+  serverNow?: number,
+): L[] {
   for (const [id, until] of skip) if (now >= until) skip.delete(id);
   return lobbies.filter((l) => {
     if (!l?.gameID || skip.has(l.gameID)) return false;
     if (l.gameConfig?.trusted === true && !trusted) return false;
+    const startsAt = Number(l.startsAt);
+    if (serverNow !== undefined && startsAt > 0 && startsAt - serverNow < MIN_LEFT_MS) return false;
     const max = Number(l.gameConfig?.maxPlayers);
-    return !(max > 0 && Number(l.numClients) >= max);
+    return !(max > 0 && Number(l.numClients) > max - MIN_FREE);
   });
 }
 

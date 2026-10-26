@@ -82,6 +82,15 @@ async function joinableTests() {
   // A skip lapses after its time.
   assert.deepEqual(joinable(live, false, skip, 1000).map((l) => l.gameID), ["S", "O", "N"]);
   assert.equal(skip.size, 0);
+  // Near the start, or one slot from full: skipped. No startsAt (queued): kept.
+  const timed = [
+    { gameID: "A", numClients: 3, startsAt: 110_000, gameConfig: { maxPlayers: 60 } },
+    { gameID: "B", numClients: 3, startsAt: 130_000, gameConfig: { maxPlayers: 60 } },
+    { gameID: "C", numClients: 59, gameConfig: { maxPlayers: 60 } },
+    { gameID: "Q", numClients: 0, gameConfig: { maxPlayers: 60 } },
+  ];
+  assert.deepEqual(joinable(timed, false, new Map(), 0, 100_000).map((l) => l.gameID), ["B", "Q"]);
+  assert.deepEqual(joinable(timed, false, new Map(), 0, 50_000).map((l) => l.gameID), ["A", "B", "Q"]);
   // holdLock: one holder at a time, free again after release.
   held.clear();
   const r1 = await holdLock(locks, "ofbot-solo");
