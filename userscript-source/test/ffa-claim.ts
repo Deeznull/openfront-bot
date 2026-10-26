@@ -41,6 +41,11 @@ async function lockTests() {
   assert.equal((await free.claim([{ gameID: "E" }]))?.gameID, "E");
   await tick();
   assert.equal(held.has("ofbot-ffa-game-D"), false);
+  // Nothing new to take: the old claim stays held.
+  held.add("ofbot-ffa-game-F");
+  assert.equal(await free.claim([{ gameID: "F" }]), null);
+  assert.equal(free.mine, "E");
+  assert.equal(held.has("ofbot-ffa-game-E"), true);
   // Locks that throw: no crash, no claim.
   const bad = new LockClaims({ request: () => Promise.reject(new Error("off")) });
   assert.equal(await bad.claim(lobbies), null);
@@ -84,8 +89,8 @@ async function joinableTests() {
   assert.equal(skip.size, 0);
   // Near the start, or one slot from full: skipped. No startsAt (queued): kept.
   const timed = [
-    { gameID: "A", numClients: 3, startsAt: 110_000, gameConfig: { maxPlayers: 60 } },
-    { gameID: "B", numClients: 3, startsAt: 130_000, gameConfig: { maxPlayers: 60 } },
+    { gameID: "A", numClients: 3, startsAt: 105_000, gameConfig: { maxPlayers: 60 } },
+    { gameID: "B", numClients: 3, startsAt: 115_000, gameConfig: { maxPlayers: 60 } },
     { gameID: "C", numClients: 59, gameConfig: { maxPlayers: 60 } },
     { gameID: "Q", numClients: 0, gameConfig: { maxPlayers: 60 } },
   ];

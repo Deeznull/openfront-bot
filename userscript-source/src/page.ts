@@ -1016,13 +1016,32 @@ function soloTurn(now: number): boolean | null {
 let joinPending: { id: string; at: number } | null = null;
 const joinSkip = new Map<string, number>();
 
+// Lobbies the server refused, shared with the other bot tabs so none of them
+// tries the same dead lobby next.
+let skipChannel: BroadcastChannel | null = null;
+try {
+  skipChannel = new BroadcastChannel("ofbot-ffa-skip");
+  skipChannel.onmessage = (e) => {
+    if (typeof e.data?.skip === "string") joinSkip.set(e.data.skip, Date.now() + SKIP_MS);
+  };
+} catch {
+  /* no BroadcastChannel: each tab finds out by itself */
+}
+
 // The server refused the join (it started just before we got in, or filled):
 // skip that lobby and pick another at once instead of waiting out JOIN_WAIT_MS.
 document.addEventListener("leave-lobby", (e: Event) => {
   const d = (e as CustomEvent).detail;
   if (!settings.farmPublic || (d?.cause !== "game-started" && d?.cause !== "full-lobby")) return;
   const id = String(d.lobby ?? joinPending?.id ?? "");
-  if (id) joinSkip.set(id, Date.now() + SKIP_MS);
+  if (id) {
+    joinSkip.set(id, Date.now() + SKIP_MS);
+    try {
+      skipChannel?.postMessage({ skip: id });
+    } catch {
+      /* closed */
+    }
+  }
   note(`Farm: lobby ${id} ${d.cause === "full-lobby" ? "filled up" : "started"} before we got in — trying another one`);
   joinPending = null;
   lockClaims?.drop();
@@ -1042,8 +1061,8 @@ function farmJoinPublic(now: number) {
     note(`Farm: joining lobby ${joinPending.id} didn't work — trying another one`);
     joinSkip.set(joinPending.id, now + SKIP_MS);
     joinPending = null;
-    lockClaims?.drop();
-    claims.drop();
+    // The claim stays until the next one replaces it: this join may still
+    // land, and another tab must not join the same lobby meanwhile.
     if (sel.showTrustRequired) sel.showTrustRequired = false;
     farmJoinAt = 0;
   }

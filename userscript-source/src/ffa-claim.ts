@@ -47,9 +47,10 @@ export const SKIP_MS = 5 * 60_000;
 // a background tab), and the server refuses a player whose join comes just
 // after the start or into a full lobby ("You didn't enter the game in time",
 // live 2026-10-26). So a tab skips the active lobby once it starts within
-// MIN_LEFT_MS, and lobbies about to fill (a full lobby starts at once); the
-// queued lobbies (no startsAt yet) start later and are safe.
-export const MIN_LEFT_MS = 20_000;
+// MIN_LEFT_MS (its countdown is ~2 min, a join takes 2-5 s), and lobbies about
+// to fill (a full lobby starts at once); the queued lobbies (no startsAt yet)
+// start later and are safe.
+export const MIN_LEFT_MS = 10_000;
 export const MIN_FREE = 2;
 
 /** The lobbies this tab could join, in the list's order. serverNow: the server's clock now (ms). */
@@ -89,7 +90,8 @@ export class LockClaims {
       this.release = release;
       return l;
     }
-    this.drop();
+    // Nothing new: keep the old claim. A join given up on can still land in
+    // that lobby, and another tab joining it then would be a duplicate session.
     return null;
   }
 
