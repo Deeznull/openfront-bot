@@ -1,8 +1,8 @@
 diff --git a/packages/engine-api/src/Schemas.ts b/packages/engine-api/src/Schemas.ts
-index c20a9cc8..2eb201ea 100644
+index 909bb3956..e27a69a95 100644
 --- a/packages/engine-api/src/Schemas.ts
 +++ b/packages/engine-api/src/Schemas.ts
-@@ -281,6 +281,8 @@ export const GameConfigSchema = z.object({
+@@ -293,6 +293,8 @@ export const GameConfigSchema = z.object({
    infiniteGold: z.boolean(),
    infiniteTroops: z.boolean(),
    instantBuild: z.boolean(),
@@ -12,18 +12,18 @@ index c20a9cc8..2eb201ea 100644
    disableAlliances: z.boolean().nullable().optional(),
    disableClanTags: z.boolean().optional(),
 diff --git a/packages/engine/src/GameRunner.ts b/packages/engine/src/GameRunner.ts
-index 2880e69c..2fe81484 100644
+index 7c88eb772..cd775a60a 100644
 --- a/packages/engine/src/GameRunner.ts
 +++ b/packages/engine/src/GameRunner.ts
-@@ -6,6 +6,7 @@ import {
-   GameUpdates,
+@@ -7,6 +7,7 @@ import {
+   HumanDisconnects,
    HumanStatsSnapshot,
    NameViewData,
 +  Nation,
    PlayerActions,
    PlayerBorderTiles,
    PlayerBuildableUnitType,
-@@ -25,6 +26,7 @@ import { loadTerrainMap } from "@openfront/engine-lib/game/TerrainMapLoader";
+@@ -26,6 +27,7 @@ import { loadTerrainMap } from "@openfront/engine-lib/game/TerrainMapLoader";
  import { PseudoRandom } from "@openfront/engine-lib/PseudoRandom";
  import { simpleHash } from "@openfront/engine-lib/Util";
  import { EngineConfig } from "./configuration/EngineConfig";
@@ -31,7 +31,7 @@ index 2880e69c..2fe81484 100644
  import { DoomsdayClockExecution } from "./execution/DoomsdayClockExecution";
  import { Executor } from "./execution/ExecutionManager";
  import { RecomputeRailClusterExecution } from "./execution/RecomputeRailClusterExecution";
-@@ -92,9 +94,34 @@ export async function createGameRunner(
+@@ -93,9 +95,34 @@ export async function createGameRunner(
      callBack,
    );
    gr.init();
@@ -67,10 +67,10 @@ index 2880e69c..2fe81484 100644
  function loadGameMap(
    config: Pick<GameStartInfo["config"], "gameMap" | "gameMapSize">,
 diff --git a/resources/lang/en.json b/resources/lang/en.json
-index 455fc88d..1b57f0e8 100644
+index 5130cc7d3..6957f0078 100644
 --- a/resources/lang/en.json
 +++ b/resources/lang/en.json
-@@ -1001,6 +1001,7 @@
+@@ -1016,6 +1016,7 @@
      "infinite_gold": "Infinite gold",
      "infinite_troops": "Infinite troops",
      "instant_build": "Instant build",
@@ -79,7 +79,7 @@ index 455fc88d..1b57f0e8 100644
      "mins_placeholder": "Mins",
      "nations": "Nations: ",
 diff --git a/src/client/SinglePlayerModal.ts b/src/client/SinglePlayerModal.ts
-index af3c49ec..ee38e76d 100644
+index af3c49ec8..ee38e76da 100644
 --- a/src/client/SinglePlayerModal.ts
 +++ b/src/client/SinglePlayerModal.ts
 @@ -105,6 +105,7 @@ const DEFAULT_OPTIONS = {

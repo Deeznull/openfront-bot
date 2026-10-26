@@ -10,7 +10,7 @@ This repository does not include the game's source code. The game can be downloa
 
 ## Contents
 - `openfront-bot.user.js`: the ready-to-install Tampermonkey script.
-- `bot/BotExecution.ts`: the bot (game version v0.35.2+).
+- `bot/BotExecution.ts`: the bot (game version v0.35.4; also runs on v0.35.2).
 - `bot/harness/`: headless game runner (`BotGame.ts`), stand-in opponents, evaluation and tuning scripts (`Eval.mjs`, `Tune.mjs`, `stats.mjs`).
 - `bot/tests/`: unit tests.
 - `bot/v34/`: the bot ported to game version v0.34.24.
@@ -29,11 +29,11 @@ This repository does not include the game's source code. The game can be downloa
 - **Panel:** **–/+** folds the panel; **Options** hides the checkboxes.
 - **Multi-tab bypass (anti-vigilant mode):** the game's multi-tab detector (the pop-up that freezes you for 10s when it sees another tab) is neutralized in every mode, public included — so you can run the bot in several tabs at once. The detector is purely client-side, and the IP/device/"reported" it shows are fake values generated locally, never sent anywhere.
 
-The script is made for game version v0.35.2 (since script 0.6.1; 0.6.0 was made for v0.35.0; older 0.5.x scripts were made for v0.34.24 and don't work on v0.35). On newer versions it keeps playing by following the live game, until a version changes too much; then it must be rebuilt (see `userscript-source/README.md`). Installed copies update themselves when a rebuilt script is pushed here.
+The script is made for game version v0.35.4 (since script 0.6.3.9; 0.6.1-0.6.3.8 were made for v0.35.2, 0.6.0 for v0.35.0; older 0.5.x scripts were made for v0.34.24 and don't work on v0.35). On newer versions it keeps playing by following the live game, until a version changes too much; then it must be rebuilt (see `userscript-source/README.md`). Installed copies update themselves when a rebuilt script is pushed here.
 
 ## 2. Training
 ### Setup
-The game itself is open source, so setup downloads it from the official repository (tag `v0.35.2`) and adds the bot on top. Needs git, Node.js 24 and bash (Git Bash on Windows).
+The game itself is open source, so setup downloads it from the official repository (tag `v0.35.4`) and adds the bot on top. Needs git, Node.js 24 and bash (Git Bash on Windows).
 
 ```
 bash setup.sh
@@ -62,7 +62,7 @@ Tips:
 - Never let the agent play games itself in real time; it should only run the scripts.
 
 ## Results
-Each test game is a full free-for-all on a random map from the online 30+ player lobby mix (30-125 players). The 30+ limit follows TrackerFront, whose FFA win leaderboards count only lobbies of 30+ players. Every other player slot is the game's **Impossible** AI. The map's nations and tribes are added as in online lobbies. The table is the final test of bot version 0.5.5 (general mode, the same as 0.5.4): 200 games on new seeds never used in training, run once. The 0.5.0 final test on the same kind of mix won 27 of 200 (~7x). These tests ran on the game version before v0.35.0 with its map mix; a new test on v0.35.0 (new maps, new mix, changed nation AI) is running.
+Each test game is a full free-for-all on a random map from the online 30+ player lobby mix (30-125 players). The 30+ limit follows TrackerFront, whose FFA win leaderboards count only lobbies of 30+ players. Every other player slot is the game's **Impossible** AI. The map's nations and tribes are added as in online lobbies. The table is the final test of bot version 0.5.5 (general mode, the same as 0.5.4): 200 games on new seeds never used in training, run once. The 0.5.0 final test on the same kind of mix won 27 of 200 (~7x). These tests ran on the game version before v0.35.0 with its map mix; no full test on v0.35 is published yet.
 
 | Lobby size | Games | Bot wins | Bot win rate | Impossible AI win rate | Bot vs Impossible |
 |---|---|---|---|---|---|
