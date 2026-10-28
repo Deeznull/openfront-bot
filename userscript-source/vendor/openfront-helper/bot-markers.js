@@ -1,7 +1,7 @@
 // Vendored from openfront-helper (https://github.com/nguyenvancaokyfpt/openfront-helper-userscript)
 // @ a4c6957, engine/ingame/bot-markers.js
 // AGPL-3.0-or-later, (c) nguyenvancaokyfpt and contributors. See README.md here.
-// Trimmed: nothing (verbatim copy)
+// Trimmed: nothing. ofbot change: allied/teammate nations get a green dot.
 
 // Bot marker overlay for nation AI players.
 
@@ -31,6 +31,13 @@
           0 0 0 2px rgba(127, 29, 29, 0.34),
           0 0 10px rgba(239, 68, 68, 0.72);
         transform: translate(var(--bot-x), var(--bot-y));
+      }
+
+      #${BOT_MARKER_CONTAINER_ID} .openfront-helper-bot-dot.openfront-helper-bot-ally {
+        background: rgba(34, 197, 94, 0.68);
+        box-shadow:
+          0 0 0 2px rgba(20, 83, 45, 0.34),
+          0 0 10px rgba(34, 197, 94, 0.72);
       }
     `;
     (document.head || document.documentElement).appendChild(style);
@@ -68,7 +75,8 @@
         continue;
       }
       const markerId = getPlayerMarkerId(player, index);
-      result.push({ player, markerId });
+      const ally = getPlayerRelationToMyPlayer(game, player) === "ally";
+      result.push({ player, markerId, ally });
     }
     return result;
   }
@@ -95,7 +103,7 @@
     marker.className = "openfront-helper-bot-dot";
     marker.dataset.botId = markerId;
     container.appendChild(marker);
-    entry = { marker, x: NaN, y: NaN, hidden: false };
+    entry = { marker, x: NaN, y: NaN, hidden: false, ally: false };
     botMarkerEntries.set(markerId, entry);
     return entry;
   }
@@ -143,7 +151,7 @@
     const innerHeight = window.innerHeight;
 
     for (let i = 0; i < botMarkerScanCache.length; i += 1) {
-      const { player, markerId } = botMarkerScanCache[i];
+      const { player, markerId, ally } = botMarkerScanCache[i];
       const nameLocation = player.nameLocation?.();
       if (!nameLocation) {
         const existing = botMarkerEntries.get(markerId);
@@ -173,6 +181,10 @@
       if (entry.hidden) {
         entry.marker.hidden = false;
         entry.hidden = false;
+      }
+      if (entry.ally !== ally) {
+        entry.marker.classList.toggle("openfront-helper-bot-ally", ally);
+        entry.ally = ally;
       }
       if (entry.x !== screenPos.x) {
         entry.marker.style.setProperty("--bot-x", `${screenPos.x}px`);

@@ -1358,9 +1358,12 @@ function buildAids(fold: HTMLElement, list: HTMLElement) {
   const aids: Aid[] = allAids();
   settings.aids ??= {};
   const boxes: HTMLInputElement[] = [];
+  // Never switched on by "All" (only by its own box); "All" off still stops it.
+  const notByAll = new Set(["chat"]);
+  const byAll = aids.filter((a) => !notByAll.has(a.key));
   // "All" switch: turns every aid on or off at once; on only while all are on.
   const allLabel = document.createElement("label");
-  allLabel.title = "Turn every play aid on or off at once";
+  allLabel.title = "Turn every play aid on or off at once (on leaves Script chat off)";
   allLabel.style.fontWeight = "700";
   const all = document.createElement("input");
   all.type = "checkbox";
@@ -1369,8 +1372,8 @@ function buildAids(fold: HTMLElement, list: HTMLElement) {
   list.appendChild(allLabel);
   all.onchange = () => {
     const on = all.checked; // each box's onchange re-sets `all` via show()
-    for (const b of boxes) {
-      if (b.checked === on) continue;
+    for (const [i, b] of boxes.entries()) {
+      if (b.checked === on || (on && notByAll.has(aids[i].key))) continue;
       b.checked = on;
       b.onchange!(new Event("change"));
     }
@@ -1378,7 +1381,7 @@ function buildAids(fold: HTMLElement, list: HTMLElement) {
   const show = () => {
     list.style.display = settings.aidsOpen ? "" : "none";
     const n = aids.filter((a) => settings.aids![a.key] ?? a.def).length;
-    all.checked = n === aids.length;
+    all.checked = byAll.every((a) => settings.aids![a.key] ?? a.def);
     fold.innerHTML = `Play aids${n ? ` (${n} on)` : ""} <span style="font-size:1.7em;line-height:0;vertical-align:-0.1em">${settings.aidsOpen ? "▾" : "▸"}</span>`;
   };
   for (const a of aids) {

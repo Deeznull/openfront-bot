@@ -19,6 +19,9 @@
 
   // Canvas-based rendering (Blon pattern). Set true to replace DOM/SVG completely.
   var _boatUseCanvas = true;
+  // ofbot: "Bold boat trails" aid. Thick outlined routes and a big target
+  // symbol at each landing tile (canvas renderer only).
+  let boatBoldTrails = false;
   const boatPredictionDomCache = new Map();
   let boatPredictionHoverElements = null;
 
@@ -1029,7 +1032,22 @@
 
         // Marker: circle + crosshair (Blon pattern) — always shown; hover-only
         // detail (route + ETA label) is added below.
-        if (markersOn) {
+        if (markersOn && boatBoldTrails && alwaysShow) {
+          // Target symbol: dark halo, thick ring, crosshair past the ring, dot.
+          ctx.beginPath(); ctx.arc(spx, spy, 13, 0, Math.PI * 2);
+          ctx.fillStyle = "rgba(0,0,0,0.55)"; ctx.fill();
+          ctx.beginPath(); ctx.arc(spx, spy, 10, 0, Math.PI * 2);
+          ctx.lineWidth = 3; ctx.strokeStyle = color; ctx.stroke();
+          ctx.beginPath();
+          ctx.moveTo(spx - 17, spy); ctx.lineTo(spx - 5, spy);
+          ctx.moveTo(spx + 5, spy); ctx.lineTo(spx + 17, spy);
+          ctx.moveTo(spx, spy - 17); ctx.lineTo(spx, spy - 5);
+          ctx.moveTo(spx, spy + 5); ctx.lineTo(spx, spy + 17);
+          ctx.lineWidth = 4; ctx.strokeStyle = "rgba(0,0,0,0.8)"; ctx.stroke();
+          ctx.lineWidth = 2; ctx.strokeStyle = color; ctx.stroke();
+          ctx.beginPath(); ctx.arc(spx, spy, 2.5, 0, Math.PI * 2);
+          ctx.fillStyle = color; ctx.fill();
+        } else if (markersOn) {
           ctx.beginPath(); ctx.arc(spx, spy, 8, 0, Math.PI * 2);
           ctx.fillStyle = t.bg; ctx.fill();
           ctx.lineWidth = 2; ctx.strokeStyle = color; ctx.stroke();
@@ -1046,8 +1064,15 @@
           if (rpts.length >= 2) {
             ctx.beginPath(); ctx.moveTo(rpts[0].x, rpts[0].y);
             for (var rj = 1; rj < rpts.length; rj++) ctx.lineTo(rpts[rj].x, rpts[rj].y);
-            ctx.strokeStyle = color; ctx.globalAlpha = 0.35; ctx.lineWidth = 1.5;
-            ctx.setLineDash([4, 4]); ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = 1;
+            if (boatBoldTrails && alwaysShow) {
+              ctx.lineJoin = "round"; ctx.lineCap = "round";
+              ctx.strokeStyle = "rgba(0,0,0,0.7)"; ctx.lineWidth = 6.5; ctx.stroke();
+              ctx.strokeStyle = color; ctx.globalAlpha = 0.95; ctx.lineWidth = 3.5;
+              ctx.stroke(); ctx.globalAlpha = 1;
+            } else {
+              ctx.strokeStyle = color; ctx.globalAlpha = 0.35; ctx.lineWidth = 1.5;
+              ctx.setLineDash([4, 4]); ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = 1;
+            }
           }
         }
 

@@ -20,6 +20,20 @@ function _ofbotRemoveById(ids) {
 
 let _ofbotRatioKeysBound = false;
 
+// "Boat + warship routes" and "Bold boat trails" share the boat overlay; it
+// stays on while either is on.
+let _ofbotBoatsOn = false;
+let _ofbotTrailsOn = false;
+
+function _ofbotSyncBoatPrediction() {
+  boatBoldTrails = _ofbotTrailsOn;
+  setBoatPredictionEnabled(_ofbotBoatsOn || _ofbotTrailsOn, {
+    alwaysOwnRoutes: _ofbotTrailsOn,
+    alwaysTeamRoutes: _ofbotTrailsOn,
+    alwaysEnemyRoutes: _ofbotTrailsOn,
+  });
+}
+
 let _ofbotAutoDonateTimer = null;
 
 function _ofbotSetAutoDonate(on) {
@@ -85,15 +99,23 @@ window.__ofbotHelper = {
     {
       key: "boats",
       label: "Boat + warship routes",
-      title: "Draws transport-boat and warship routes, plus a panel listing boats sent and incoming.",
+      title: "Marks where transport boats will land (hover a mark for its route and ETA) and draws warship routes.",
       set(on) {
         _ofbotHelperSafe("boats", () => {
-          setBoatPredictionEnabled(on);
-          setBoatPanelEnabled(on);
+          _ofbotBoatsOn = on;
+          _ofbotSyncBoatPrediction();
           setWarshipRoutesEnabled(on);
-          if (!on) {
-            _ofbotRemoveById([BOAT_PANEL_ID]);
-          }
+        });
+      },
+    },
+    {
+      key: "boatTrails",
+      label: "Bold boat trails",
+      title: "Always draws the routes of your, your team's and enemy transport boats as thick lines, with a target symbol on the tile each one lands on.",
+      set(on) {
+        _ofbotHelperSafe("boatTrails", () => {
+          _ofbotTrailsOn = on;
+          _ofbotSyncBoatPrediction();
         });
       },
     },
@@ -178,7 +200,7 @@ window.__ofbotHelper = {
     {
       key: "bots",
       label: "Bot nation markers",
-      title: "Marks nation-AI (bot) players on the map.",
+      title: "Marks nation-AI (bot) players on the map: red dot, green for allies and teammates.",
       set(on) {
         _ofbotHelperSafe("bots", () => setBotMarkersEnabled(on));
       },

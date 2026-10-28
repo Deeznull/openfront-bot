@@ -34,7 +34,9 @@ Tampermonkey's **Dashboard → Utilities → Import from file**.
      `localStorage`.
    - **Play aids ▸** unfolds a list of optional helpers for your own play,
      all off by default. They work with the bot on or off. Each box they
-     open can be dragged by its header and folded with –.
+     open can be dragged by its header and folded with –. The **All** switch
+     turns every aid on or off at once; switching it on leaves Script chat
+     off (tick that one by itself).
      - **Hold-key macros**: hold X and left-click the map to launch as many
        Atom Bombs as the gold pays for (max 50, the game's limit per
        intent); hold Z / V / H and click to build a Port / SAM Launcher /

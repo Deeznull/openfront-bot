@@ -30,7 +30,10 @@ before the page bundle.
 | `runtime.js` | `runtime.js` | Removed `PAGE_SOURCE`/`EXTENSION_SOURCE`, `postToExtension`, the load-time `public-lobbies-update` listener, the auto-renew `localStorage` read (now `false`), and the trade/heatmap-only helpers (`canStationTradeWith`, `getHeatmapTypePriority`, `addEconomicSource` and its index) |
 | `shared-utils.js` | `shared-utils.js` | none |
 | `game-context.js` | `selective-trade-policy.js` (lines 1-89, 178-186, 488-579) | Keeps only game-context discovery (`getOpenFrontGameContext` and helpers, `isTeamGame`, `getGameConfig`, `isHumanPlayer`). All embargo / selective-trade code, the `report*`/`refresh*` functions and the custom/solo/cheats checks are gone. |
-| `alliances.js`, `bot-markers.js`, `gold-per-minute.js`, `team-build-stats.js`, `nuke-prediction.js`, `boat-prediction.js`, `warship-routes.js`, `boat-panel.js`, `estate-panel.js`, `map-overlay-scheduler.js`, `advisor-intel.js`, `name-overlay.js`, `attack-highlight.js`, `nuke-trajectory.js`, `advisor-panel.js`, `retaliation-hud.js`, `attack-ratio-hotkey.js`, `build-timer.js`, `game-time-alert.js` | same names | none |
+| `bot-markers.js` | same name | Allied/teammate nations get a green dot instead of red, so the game's alliance icon stays readable |
+| `boat-prediction.js` | same name | `boatBoldTrails` flag (set by the glue's "Bold boat trails" toggle): always-shown routes are drawn as thick solid lines, with a ringed crosshair on the landing tile |
+| `name-overlay.js` | same name | The blue "/max" troops label shows "current/max", colored against your own troops: within ±10% yellow, fewer red, more green (yours stays blue) |
+| `alliances.js`, `gold-per-minute.js`, `team-build-stats.js`, `nuke-prediction.js`, `warship-routes.js`, `boat-panel.js`, `estate-panel.js`, `map-overlay-scheduler.js`, `advisor-intel.js`, `attack-highlight.js`, `nuke-trajectory.js`, `advisor-panel.js`, `retaliation-hud.js`, `attack-ratio-hotkey.js`, `build-timer.js`, `game-time-alert.js` | same names | none |
 | `universal-path-finding.js` | `auto-bot/nukeBehavior.js` (lines 95-321), `auto-bot/portutil.js` (`within`, lines 146-150) | Only the Bezier and parabola path-finder math that nuke-trajectory uses. Nothing else from the auto-bot. |
 | `auto-leave.js`, `sos-defense.js` | same names | none (`sos-defense` gets `emojiId`/`enqueueSignal` from `00-shims.js`) |
 | `auto-donate.js` | `auto-donate.js` | An empty target list means every friendly human player (teammate or ally, not nation bots) instead of nobody. `sendGamePacket` and the settings cache are shims (see below). |
@@ -59,6 +62,9 @@ before the page bundle.
   the game's own leaderboard) and the advisor panel. `gold-per-minute.js` and
   `advisor-panel.js` stay in the build because other features share their
   helpers and constants.
+- **No boats panel since 0.7.1.1:** the "Boat + warship routes" toggle keeps
+  the landing marks and warship routes but no longer opens `boat-panel.js`'s
+  panel (the file stays in the build).
 
 ## Acting features
 

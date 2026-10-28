@@ -1,7 +1,8 @@
 // Vendored from openfront-helper (https://github.com/nguyenvancaokyfpt/openfront-helper-userscript)
 // @ a4c6957, engine/ingame/name-overlay.js
 // AGPL-3.0-or-later, (c) nguyenvancaokyfpt and contributors. See README.md here.
-// Trimmed: nothing (verbatim copy)
+// Trimmed: nothing. ofbot change: the troops pill shows current/max, colored
+// against your own troops (±10% yellow, fewer red, more green).
 
 // Per-player on-map overlay — a single layer on the shared map-overlay scheduler
 // that draws, above each living player's name:
@@ -177,10 +178,30 @@
     ctx.fillText(text, cx, cy + 0.5);
   }
 
-  // Max-troops-only pill (shown above the troop bar when the money readout is off).
-  function drawMaxTroopPill(ctx, cx, cy, maxTroops, dyn) {
+  // ofbot: "current/max" troops, colored against your own troops: within ±10%
+  // yellow, fewer red, more green; your own label stays blue.
+  function troopPillLabel(troops, maxTroops) {
+    return troopsDisplay(troops) + "/" + troopsDisplay(maxTroops);
+  }
+
+  function troopCompareColor(relation, troops, myTroops) {
+    if (relation === "self") {
+      return "95, 178, 255";
+    }
+    var ratio = troops / Math.max(1, myTroops);
+    if (ratio < 0.9) {
+      return "248, 113, 113";
+    }
+    if (ratio > 1.1) {
+      return "74, 222, 128";
+    }
+    return "250, 204, 21";
+  }
+
+  // Troops pill (shown above the troop bar when the money readout is off).
+  function drawMaxTroopPill(ctx, cx, cy, maxTroops, dyn, troops, rgb) {
     var fs = dyn.moneyFontSize;
-    var text = "/" + troopsDisplay(maxTroops);
+    var text = troopPillLabel(troops, maxTroops);
     ctx.font = 'bold ' + fs + 'px "Aptos", "Segoe UI", sans-serif';
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
@@ -191,17 +212,17 @@
     var h = Math.max(10, fs + 3);
     var x0 = cx - w / 2;
     var y0 = cy - h / 2;
-    fillRoundRect(ctx, x0, y0, w, h, 4, "rgba(7, 12, 18, " + dyn.pillBgAlpha + ")", "rgba(95, 178, 255, " + dyn.pillBdAlpha + ")");
-    ctx.fillStyle = "rgba(95, 178, 255, 0.98)";
+    fillRoundRect(ctx, x0, y0, w, h, 4, "rgba(7, 12, 18, " + dyn.pillBgAlpha + ")", "rgba(" + rgb + ", " + dyn.pillBdAlpha + ")");
+    ctx.fillStyle = "rgba(" + rgb + ", 0.98)";
     ctx.shadowColor = "transparent";
     ctx.shadowBlur = 0;
     ctx.fillText(text, cx, cy + 0.5);
   }
 
   // Combined money + max troops pill on a single line.
-  function drawMoneyTroopPill(ctx, cx, cy, moneyText, maxTroops, dyn) {
+  function drawMoneyTroopPill(ctx, cx, cy, moneyText, maxTroops, dyn, troops, rgb) {
     var fs = dyn.moneyFontSize;
-    var maxLabel = "/" + troopsDisplay(maxTroops);
+    var maxLabel = troopPillLabel(troops, maxTroops);
     var combined = moneyText + "  " + maxLabel;
 
     ctx.font = 'bold ' + fs + 'px "Aptos", "Segoe UI", sans-serif';
@@ -231,8 +252,8 @@
     ctx.textAlign = "left";
     ctx.fillText(moneyText, startX, cy + 0.5);
 
-    // Draw max troops part (blue)
-    ctx.fillStyle = "rgba(95, 178, 255, 0.98)";
+    // Draw current/max troops part (colored against your troops)
+    ctx.fillStyle = "rgba(" + rgb + ", 0.98)";
     ctx.fillText(maxLabel, startX + moneyW + gap, cy + 0.5);
 
     ctx.textAlign = "center";
@@ -326,15 +347,16 @@
           }
         }
 
+        var troopRgb = troopCompareColor(entry.relation, liveTroops, myTroops);
         if (mapMoneyEnabled && mapTroopCountsEnabled) {
-          // Combined: money + /max on one line, troop bar below.
-          drawMoneyTroopPill(ctx, p.x, p.y - dyn.moneyOffsetY, formatMapGold(entry.gold), entry.maxTroops, dyn);
+          // Combined: money + current/max on one line, troop bar below.
+          drawMoneyTroopPill(ctx, p.x, p.y - dyn.moneyOffsetY, formatMapGold(entry.gold), entry.maxTroops, dyn, liveTroops, troopRgb);
           drawTroopBar(ctx, p.x, p.y - dyn.troopOffsetY, entry.relation, liveTroops, entry.inCombat, entry.maxTroops, dyn);
         } else if (mapMoneyEnabled) {
           drawMoneyPill(ctx, p.x, p.y - dyn.moneyOffsetY, formatMapGold(entry.gold), dyn);
         } else if (mapTroopCountsEnabled) {
-          // Money off: /max still gets its own line above the bar.
-          drawMaxTroopPill(ctx, p.x, p.y - dyn.moneyOffsetY, entry.maxTroops, dyn);
+          // Money off: current/max still gets its own line above the bar.
+          drawMaxTroopPill(ctx, p.x, p.y - dyn.moneyOffsetY, entry.maxTroops, dyn, liveTroops, troopRgb);
           drawTroopBar(ctx, p.x, p.y - dyn.troopOffsetY, entry.relation, liveTroops, entry.inCombat, entry.maxTroops, dyn);
         }
       }
