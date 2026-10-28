@@ -46,8 +46,6 @@ Tampermonkey's **Dashboard → Utilities → Import from file**.
        where troop growth is fastest, growth per second, a wait/attack cue,
        what an attack at the current ratio sends, and the troops above a 35%
        reserve that are safe to donate.
-     - **Live standings + eliminations**: players by land share, team
-       totals, and recent eliminations of nations and humans.
      - **Rank badges (ofstats.io)**: an ofstats.io rank (top %, win rate or
        "new") next to human player names on the hover card and the
        leaderboard. Sends player names, and the matching ofstats player ids,
@@ -257,7 +255,7 @@ then http://localhost:9000), install the script, and start a Singleplayer game.
 | `src/feed.ts` | Reads hashes and the per-tick update the mirror needs, tolerant of format changes |
 | `src/shadow-entry.ts` | Worker or page entry point for the shadow bundle |
 | `src/engine-main.ts`, `src/engine-v34.ts` | One engine API for both repository layouts (picked by `build.mjs`) |
-| `src/aids/` | Play aids: hold-key macros, troop timing + donation box, live standings, ofstats rank badges, Nostr chat (`vendor/nostr-crypto.js` from openfront-pro), the panel list |
+| `src/aids/` | Play aids: hold-key macros, troop timing + donation box, ofstats rank badges, Nostr chat (`vendor/nostr-crypto.js` from openfront-pro), the panel list |
 | `vendor/openfront-helper/` | Overlays from openfront-helper-userscript (AGPL-3.0-or-later), a plain script put before the bundle |
 | `build.mjs` | esbuild bundle that writes the userscript (`--test` builds the test) |
 | `test/sim.ts` | Headless integration test |

@@ -20,25 +20,6 @@ function _ofbotRemoveById(ids) {
 
 let _ofbotRatioKeysBound = false;
 
-function _ofbotTeardownGoldPerMinute() {
-  _ofbotRemoveById([TOP_GOLD_PER_MINUTE_BADGE_ID, HELPER_STATS_CONTAINER_ID]);
-  apsRenderedExpanded = null;
-  apsRowCache.clear();
-  apsHeaderCells = null;
-  apsFooterEntry = null;
-  if (_helperStatsLayoutListenersBound) {
-    window.removeEventListener("resize", markHelperStatsLayoutDirty);
-    const visualViewport = window.visualViewport;
-    if (visualViewport) {
-      visualViewport.removeEventListener("resize", markHelperStatsLayoutDirty);
-      visualViewport.removeEventListener("scroll", markHelperStatsLayoutDirty);
-    }
-    _helperStatsResizeObserver?.disconnect();
-    _helperStatsResizeObserver = null;
-    _helperStatsLayoutListenersBound = false;
-  }
-}
-
 let _ofbotAutoDonateTimer = null;
 
 function _ofbotSetAutoDonate(on) {
@@ -138,32 +119,6 @@ window.__ofbotHelper = {
             _ofbotRemoveById([TEAM_BUILD_PANEL_ID, TEAM_BUILD_ALERT_CONTAINER_ID]);
           }
         });
-      },
-    },
-    {
-      key: "gpm",
-      label: "Players / gold-per-min",
-      title: "All-players table with gold per minute and stats. Hides the game's own leaderboard while on.",
-      set(on) {
-        _ofbotHelperSafe("gpm", () => {
-          // Off in this order: the sampler only stops once the panel is off too.
-          if (on) {
-            setGoldPerMinuteEnabled(true);
-            setTopGoldPerMinuteEnabled(true);
-          } else {
-            setTopGoldPerMinuteEnabled(false);
-            setGoldPerMinuteEnabled(false);
-            _ofbotTeardownGoldPerMinute();
-          }
-        });
-      },
-    },
-    {
-      key: "advisor",
-      label: "Advisor panel",
-      title: "Panel with your troop economy, safe-to-spend troops and the biggest enemy threats.",
-      set(on) {
-        _ofbotHelperSafe("advisor", () => setAdvisorPanelEnabled(on));
       },
     },
     {

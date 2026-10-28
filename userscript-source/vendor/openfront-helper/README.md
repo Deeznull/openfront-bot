@@ -55,6 +55,10 @@ before the page bundle.
   alliance-requests panel and spawn-heatmap.
 - **trade-balances and heatmaps:** gold-per-minute needed only one small
   helper from them, which is copied into `00-shims.js`.
+- **No toggle since 0.7.1:** the all-players / gold-per-minute panel (it hid
+  the game's own leaderboard) and the advisor panel. `gold-per-minute.js` and
+  `advisor-panel.js` stay in the build because other features share their
+  helpers and constants.
 
 ## Acting features
 

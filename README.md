@@ -31,8 +31,7 @@ This repository does not include the game's source code. The game can be downloa
 - **Play aids** (all off by default, each with its own checkbox; they work with the bot on or off, for your own play):
   - Hold-key macros: hold **X** and left-click the map to launch as many Atom Bombs as your gold pays for (max 50); hold **Z** / **V** / **H** and click to build a Port / SAM / Missile Silo, or upgrade yours there by up to 50 levels.
   - Troop timing + safe donation: your troops against the cap, where growth is fastest, when to wait or attack, and how much you can donate keeping a 35% reserve.
-  - Live standings with team totals and an elimination feed.
-  - Overlays and panels from [openfront-helper-userscript](https://github.com/nguyenvancaokyfpt/openfront-helper-userscript): nuke landing and trajectory, boat and warship routes, incoming attacks, build timers, gold per minute, team buildings, an advisor panel, and more (see `userscript-source/README.md`).
+  - Overlays and panels from [openfront-helper-userscript](https://github.com/nguyenvancaokyfpt/openfront-helper-userscript): nuke landing and trajectory, boat and warship routes, incoming attacks, build timers, team buildings, an estates panel, and more (see `userscript-source/README.md`).
   - Anti-AFK: keeps the tab from being marked idle.
   - Moves sent for you (they share the bot's rate limit): auto-donate troops or gold to a teammate, and auto-defend (send troops to a teammate under attack).
   - Auto-leave: goes back to the lobby once you or your team has won.
