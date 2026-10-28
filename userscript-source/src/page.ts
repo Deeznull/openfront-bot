@@ -1220,6 +1220,9 @@ function buildUI() {
   .s{color:#93c5fd}.m{color:#9ca3af;word-break:break-word;max-height:48px;overflow:hidden}
   .x{cursor:pointer;color:#9ca3af;font-weight:400}
   .of{cursor:pointer;color:#9ca3af;user-select:none}.o{display:grid;gap:5px}
+  .sw{appearance:none;flex:none;width:30px;height:16px;margin:0;border-radius:8px;background:#4b5563;position:relative;cursor:pointer;transition:background .15s}
+  .sw::after{content:"";position:absolute;top:2px;left:2px;width:12px;height:12px;border-radius:50%;background:#fff;transition:left .15s}
+  .sw:checked{background:#16a34a}.sw:checked::after{left:16px}
 </style>
 <div class="p">
   <div class="h"><span>OpenFront Bot</span><small class="x" title="Collapse">–</small></div>
@@ -1354,9 +1357,28 @@ function buildUI() {
 function buildAids(fold: HTMLElement, list: HTMLElement) {
   const aids: Aid[] = allAids();
   settings.aids ??= {};
+  const boxes: HTMLInputElement[] = [];
+  // "All" switch: turns every aid on or off at once; on only while all are on.
+  const allLabel = document.createElement("label");
+  allLabel.title = "Turn every play aid on or off at once";
+  allLabel.style.fontWeight = "700";
+  const all = document.createElement("input");
+  all.type = "checkbox";
+  all.className = "sw";
+  allLabel.append(all, " All");
+  list.appendChild(allLabel);
+  all.onchange = () => {
+    const on = all.checked; // each box's onchange re-sets `all` via show()
+    for (const b of boxes) {
+      if (b.checked === on) continue;
+      b.checked = on;
+      b.onchange!(new Event("change"));
+    }
+  };
   const show = () => {
     list.style.display = settings.aidsOpen ? "" : "none";
     const n = aids.filter((a) => settings.aids![a.key] ?? a.def).length;
+    all.checked = n === aids.length;
     fold.innerHTML = `Play aids${n ? ` (${n} on)` : ""} <span style="font-size:1.7em;line-height:0;vertical-align:-0.1em">${settings.aidsOpen ? "▾" : "▸"}</span>`;
   };
   for (const a of aids) {
@@ -1373,6 +1395,7 @@ function buildAids(fold: HTMLElement, list: HTMLElement) {
     };
     label.append(box, ` ${a.label}`);
     list.appendChild(label);
+    boxes.push(box);
     if (box.checked) setAid(a, true, aidApi);
   }
   fold.onclick = () => {
