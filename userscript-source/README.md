@@ -32,6 +32,12 @@ Tampermonkey's **Dashboard → Utilities → Import from file**.
      panel counts the games.
    - The panel can be dragged and collapsed. Its settings are saved in
      `localStorage`.
+   - **Multi-tab bypass (anti-vigilant mode):** the game's multi-tab detector
+     (the pop-up that freezes you for 10 s when it sees another tab) is
+     neutralized in every mode, public included, so the bot can run in several
+     tabs at once. The detector is purely client-side, and the IP/device/
+     "reported" values it shows are fake values generated locally, never sent
+     anywhere.
 
 Each build matches only the sites that run its engine: the live-site build
 matches any `openfront.<tld>` domain and
