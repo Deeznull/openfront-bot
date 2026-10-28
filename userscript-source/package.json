@@ -1,6 +1,6 @@
 {
   "name": "openfront-bot-userscript",
-  "version": "0.7",
+  "version": "0.7.1",
   "private": true,
   "type": "module",
   "scripts": {

@@ -1237,7 +1237,7 @@ function buildUI() {
     <label title="Farm: once the day's XP-paying solo games are used, join public FFA games (the bot plays; next lobby after it dies or the game ends)"><input type="checkbox" class="pub"> …then public FFA games</label>
     <div class="of ex" title="Download a log of the games played in this browser (map, size, place, checkpoints), to study them with their replays"></div>
     </div>
-    <div class="of af" title="Optional helpers for your own play; they work with the bot on or off"></div>
+    <div class="of af" style="font-weight:700" title="Optional helpers for your own play; they work with the bot on or off"></div>
     <div class="o ad"></div>
     <div class="m"></div>
   </div>
@@ -1357,7 +1357,7 @@ function buildAids(fold: HTMLElement, list: HTMLElement) {
   const show = () => {
     list.style.display = settings.aidsOpen ? "" : "none";
     const n = aids.filter((a) => settings.aids![a.key] ?? a.def).length;
-    fold.textContent = `Play aids${n ? ` (${n} on)` : ""} ${settings.aidsOpen ? "▾" : "▸"}`;
+    fold.innerHTML = `Play aids${n ? ` (${n} on)` : ""} <span style="font-size:1.7em;line-height:0;vertical-align:-0.1em">${settings.aidsOpen ? "▾" : "▸"}</span>`;
   };
   for (const a of aids) {
     const label = document.createElement("label");
