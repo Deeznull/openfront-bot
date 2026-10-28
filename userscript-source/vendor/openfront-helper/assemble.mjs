@@ -10,6 +10,7 @@ const dir = path.dirname(fileURLToPath(import.meta.url));
 
 export const HELPER_FILES = [
   "00-shims.js",
+  "anti-afk.js",
   "runtime.js",
   "shared-utils.js",
   "game-context.js",
@@ -22,7 +23,9 @@ export const HELPER_FILES = [
   "warship-routes.js",
   "boat-panel.js",
   "estate-panel.js",
+  "auto-leave.js",
   "universal-path-finding.js",
+  "sos-defense.js",
   "map-overlay-scheduler.js",
   "advisor-intel.js",
   "name-overlay.js",
@@ -33,6 +36,7 @@ export const HELPER_FILES = [
   "attack-ratio-hotkey.js",
   "build-timer.js",
   "game-time-alert.js",
+  "auto-donate.js",
   "zz-ofbot-glue.js",
 ];
 

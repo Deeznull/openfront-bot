@@ -10,7 +10,7 @@ This repository does not include the game's source code. The game can be downloa
 
 ## Contents
 - `openfront-bot.user.js`: the ready-to-install Tampermonkey script.
-- `bot/BotExecution.ts`: the bot (game version v0.35.4).
+- `bot/BotExecution.ts`: the bot (game version v0.35.6).
 - `bot/harness/`: headless game runner (`BotGame.ts`), stand-in opponents, evaluation and tuning scripts (`Eval.mjs`, `Tune.mjs`, `stats.mjs`).
 - `bot/tests/`: unit tests.
 - `bot/v34/`: the bot ported to game version v0.34.24.
@@ -33,12 +33,17 @@ This repository does not include the game's source code. The game can be downloa
   - Troop timing + safe donation: your troops against the cap, where growth is fastest, when to wait or attack, and how much you can donate keeping a 35% reserve.
   - Live standings with team totals and an elimination feed.
   - Overlays and panels from [openfront-helper-userscript](https://github.com/nguyenvancaokyfpt/openfront-helper-userscript): nuke landing and trajectory, boat and warship routes, incoming attacks, build timers, gold per minute, team buildings, an advisor panel, and more (see `userscript-source/README.md`).
+  - Anti-AFK: keeps the tab from being marked idle.
+  - Moves sent for you (they share the bot's rate limit): auto-donate troops or gold to a teammate, and auto-defend (send troops to a teammate under attack).
+  - Auto-leave: goes back to the lobby once you or your team has won.
+  - Rank badges next to player names. They come from [ofstats.io](https://ofstats.io), so player names are sent to that site while it is on.
+  - Nostr chat: an in-game chat between players with the script, over public Nostr relays (anyone can read it).
 
-The script is made for game version v0.35.4 (since script 0.6.3.9; 0.6.1-0.6.3.8 were made for v0.35.2, 0.6.0 for v0.35.0; older 0.5.x scripts were made for v0.34.24 and don't work on v0.35). On newer versions it keeps playing by following the live game, until a version changes too much; then it must be rebuilt (see `userscript-source/README.md`). Installed copies update themselves when a rebuilt script is pushed here.
+The script is made for game version v0.35.6 (since script 0.7; 0.6.3.9-0.6.4.0 were made for v0.35.4, 0.6.1-0.6.3.8 were made for v0.35.2, 0.6.0 for v0.35.0; older 0.5.x scripts were made for v0.34.24 and don't work on v0.35). On newer versions it keeps playing by following the live game, until a version changes too much; then it must be rebuilt (see `userscript-source/README.md`). Installed copies update themselves when a rebuilt script is pushed here.
 
 ## 2. Training
 ### Setup
-The game itself is open source, so setup downloads it from the official repository (tag `v0.35.4`) and adds the bot on top. Needs git, Node.js 24 and bash (Git Bash on Windows).
+The game itself is open source, so setup downloads it from the official repository (tag `v0.35.6`) and adds the bot on top. Needs git, Node.js 24 and bash (Git Bash on Windows).
 
 ```
 bash setup.sh

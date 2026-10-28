@@ -48,8 +48,26 @@ Tampermonkey's **Dashboard → Utilities → Import from file**.
        reserve that are safe to donate.
      - **Live standings + eliminations**: players by land share, team
        totals, and recent eliminations of nations and humans.
+     - **Rank badges (ofstats.io)**: an ofstats.io rank (top %, win rate or
+       "new") next to human player names on the hover card and the
+       leaderboard. Sends player names, and the matching ofstats player ids,
+       to api.ofstats.io; answers are cached for 10-30 minutes and requests
+       are rate-limited. Off when the lobby anonymizes names. ofstats sends
+       no CORS headers, so the requests go through the script manager's
+       `GM_xmlhttpRequest` (see below).
+     - **Script chat (Nostr)**: a chat box for players of this script in the
+       same game. Messages are signed and sent to public Nostr relays
+       (primal, nos.lol, nostr.mom, snort), which see your IP. Paused while
+       you are alive in a free-for-all game. A fresh key per game is kept in
+       `localStorage`; senders can be muted, floods are muted for a minute.
      - The overlays from `vendor/openfront-helper` (one checkbox each; the
        list is in that folder's README).
+     - The script asks for `@grant GM_xmlhttpRequest` and `@connect
+       api.ofstats.io` for the rank badges. That makes script managers run it
+       in their sandbox, so a small loader puts the whole script into the page
+       as an inline script, where it runs as before. The loader only forwards
+       GET requests to `https://api.ofstats.io/`, and only while the rank
+       badges are on.
    - **Multi-tab bypass (anti-vigilant mode):** the game's multi-tab detector
      (the pop-up that freezes you for 10 s when it sees another tab) is
      neutralized in every mode, public included, so the bot can run in several
@@ -93,16 +111,16 @@ new site version when you can.
 
 ## Building for the live site
 
-The live site runs v0.35.4 (script 0.6.3.9 on), which uses the package layout (`packages/engine/…`).
+The live site runs v0.35.6 (script 0.7 on; 0.6.3.9-0.6.4.0 were built on v0.35.4, whose engine code is the same), which uses the package layout (`packages/engine/…`).
 Build from a checkout of that tag with the bot copied in (run from the
 repository root; `bash setup.sh` makes the same checkout in `tools/game`):
 
 ```bash
-git clone --branch v0.35.4 https://github.com/openfrontio/OpenFrontIO.git tools/OpenFrontIO-v0.35.4
-mkdir -p tools/OpenFrontIO-v0.35.4/packages/engine/src/execution/bot
-cp bot/BotExecution.ts tools/OpenFrontIO-v0.35.4/packages/engine/src/execution/bot/
-cd tools/OpenFrontIO-v0.35.4 && npm ci --ignore-scripts --engine-strict=false && cd ../..
-node userscript-source/build.mjs --repo tools/OpenFrontIO-v0.35.4 --live
+git clone --branch v0.35.6 https://github.com/openfrontio/OpenFrontIO.git tools/OpenFrontIO-v0.35.6
+mkdir -p tools/OpenFrontIO-v0.35.6/packages/engine/src/execution/bot
+cp bot/BotExecution.ts tools/OpenFrontIO-v0.35.6/packages/engine/src/execution/bot/
+cd tools/OpenFrontIO-v0.35.6 && npm ci --ignore-scripts --engine-strict=false && cd ../..
+node userscript-source/build.mjs --repo tools/OpenFrontIO-v0.35.6 --live
 ```
 
 For a site still on v0.34.24 (older single-package layout, `src/core/…`), use
@@ -239,7 +257,7 @@ then http://localhost:9000), install the script, and start a Singleplayer game.
 | `src/feed.ts` | Reads hashes and the per-tick update the mirror needs, tolerant of format changes |
 | `src/shadow-entry.ts` | Worker or page entry point for the shadow bundle |
 | `src/engine-main.ts`, `src/engine-v34.ts` | One engine API for both repository layouts (picked by `build.mjs`) |
-| `src/aids/` | Play aids: hold-key macros, troop timing + donation box, live standings, the panel list |
+| `src/aids/` | Play aids: hold-key macros, troop timing + donation box, live standings, ofstats rank badges, Nostr chat (`vendor/nostr-crypto.js` from openfront-pro), the panel list |
 | `vendor/openfront-helper/` | Overlays from openfront-helper-userscript (AGPL-3.0-or-later), a plain script put before the bundle |
 | `build.mjs` | esbuild bundle that writes the userscript (`--test` builds the test) |
 | `test/sim.ts` | Headless integration test |

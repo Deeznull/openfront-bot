@@ -39,7 +39,30 @@ function _ofbotTeardownGoldPerMinute() {
   }
 }
 
+let _ofbotAutoDonateTimer = null;
+
+function _ofbotSetAutoDonate(on) {
+  if (on) {
+    _ofbotLoadHelperSettings();
+    _quickPanelSettingsCache.autoDonateEnabled = true;
+    _quickPanelSettingsCache.autoDonateGoldEnabled = true;
+    if (_ofbotAutoDonateTimer === null) {
+      _ofbotAutoDonateTimer = window.setInterval(() => window.__OFH_tickAutoDonate?.(), 1000);
+    }
+  } else {
+    _quickPanelSettingsCache.autoDonateEnabled = false;
+    _quickPanelSettingsCache.autoDonateGoldEnabled = false;
+    if (_ofbotAutoDonateTimer !== null) {
+      window.clearInterval(_ofbotAutoDonateTimer);
+      _ofbotAutoDonateTimer = null;
+    }
+  }
+}
+
 window.__ofbotHelper = {
+  // page.ts sets api to its play-aid intent sender (the bot's rate-limited
+  // path); auto-donate and auto-defend send through it and nowhere else.
+  api: null,
   features: [
     {
       key: "names",
@@ -203,6 +226,41 @@ window.__ofbotHelper = {
       title: "Marks nation-AI (bot) players on the map.",
       set(on) {
         _ofbotHelperSafe("bots", () => setBotMarkersEnabled(on));
+      },
+    },
+    {
+      key: "antiAfk",
+      label: "Anti-AFK keep-alive",
+      title:
+        "While the tab is hidden, re-runs the game's own ping if it stalls for 12 s, so the server doesn't mark you disconnected. Switch on before the match starts.",
+      set(on) {
+        _ofbotHelperSafe("antiAfk", () => setAntiAfkEnabled(on));
+      },
+    },
+    {
+      key: "autoDonate",
+      label: "Auto-donate troops/gold",
+      title:
+        "Troops: above 40% of your max, sends 25% to the weakest friendly player in a fight. Gold: above 5M, sends 25% to the poorest friendly player. At most once per 3 s each.",
+      set(on) {
+        _ofbotHelperSafe("autoDonate", () => _ofbotSetAutoDonate(on));
+      },
+    },
+    {
+      key: "sos",
+      label: "Auto-defend (SOS)",
+      title:
+        "When someone attacks you: an SOS emoji to your allies/teammates (every 12 s) and a target mark on each attacker (every 16 s per attacker).",
+      set(on) {
+        _ofbotHelperSafe("sos", () => setSosDefenseEnabled(on));
+      },
+    },
+    {
+      key: "autoLeave",
+      label: "Auto-leave after a win",
+      title: "When the end screen says you (or your team) won, goes back to the home page.",
+      set(on) {
+        _ofbotHelperSafe("autoLeave", () => setAutoLeaveOnTeamWinEnabled(on));
       },
     },
   ],

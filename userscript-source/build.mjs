@@ -112,7 +112,8 @@ const header = `// ==UserScript==
 // @description  Plays as you with the trained OpenFront code bot when you press Start. Engine ${kind} ${commit}.
 ${[...target.sites.map((m) => `// @match        ${m}`), ...(target.includes ?? []).map((m) => `// @include      ${m}`)].join("\n")}
 ${target.update ? `// @updateURL    ${target.update}\n// @downloadURL  ${target.update}\n` : ""}// @run-at       document-start
-// @grant        none
+// @grant        GM_xmlhttpRequest
+// @connect      api.ofstats.io
 // @inject-into  page
 // @noframes
 // ==/UserScript==
@@ -120,8 +121,66 @@ ${target.update ? `// @updateURL    ${target.update}\n// @downloadURL  ${target.
 
 const helperLayer = await buildHelperLayer({ minify: common.minify && esbuild.transform });
 
+// The @grant above (for the rank badges aid) makes userscript managers run the
+// script in their sandbox instead of the page. So everything the bot runs is
+// one function, __ofbotPage, that the loader below puts into the page as an
+// inline <script> (openfront.io sends no script-src CSP): it runs there
+// synchronously at document-start, exactly as the script did with @grant none.
+// If that injection does not run (a CSP added later), it runs in place.
+// The loader keeps only the GM_xmlhttpRequest bridge (src/aids/gm.ts): GET
+// https://api.ofstats.io/ only, and only while the page has switched it on.
+const loader = `
+/* Loader: runs in the userscript manager's context. */
+(function () {
+  var d = document;
+  if (typeof GM_xmlhttpRequest === "function") {
+    var on = false;
+    var OK = /^https:\\/\\/api\\.ofstats\\.io\\/[^\\s#]*$/;
+    var reply = function (id, status, text) {
+      d.dispatchEvent(new CustomEvent("ofbot:gm-res", { detail: JSON.stringify({ id: id, status: status, text: text }) }));
+    };
+    d.addEventListener("ofbot:gm-ctl", function (e) {
+      on = e.detail === "on";
+      if (on) d.dispatchEvent(new CustomEvent("ofbot:gm-ready"));
+    });
+    d.addEventListener("ofbot:gm-req", function (e) {
+      var q;
+      try { q = JSON.parse(String(e.detail)); } catch (_) { return; }
+      if (!q || typeof q.id !== "number") return;
+      if (!on || typeof q.url !== "string" || !OK.test(q.url)) return reply(q.id, null, "");
+      var fail = function () { reply(q.id, null, ""); };
+      try {
+        GM_xmlhttpRequest({
+          method: "GET", url: q.url, anonymous: true, timeout: 15000, headers: { accept: "application/json" },
+          onload: function (r) { reply(q.id, r.status, String(r.responseText || "").slice(0, 2000000)); },
+          onerror: fail, ontimeout: fail, onabort: fail
+        });
+      } catch (_) { fail(); }
+    });
+  }
+  var ran = false;
+  var mark = function () { ran = true; };
+  d.addEventListener("ofbot:page-ran", mark);
+  try {
+    var s = d.createElement("script");
+    s.textContent = "(" + __ofbotPage.toString() + ")();";
+    (d.head || d.documentElement).appendChild(s);
+    s.remove();
+  } catch (_) {}
+  d.removeEventListener("ofbot:page-ran", mark);
+  if (!ran) {
+    console.warn("[ofbot] could not inject into the page; running in the userscript context");
+    __ofbotPage();
+  }
+})();
+`;
+
 const out =
   header +
+  "\n/* Includes code adapted from devdanetra/openfront-pro (MIT, (c) 2026 devdanetra) and\n" +
+  "   @noble/curves + @noble/hashes (MIT, (c) Paul Miller); see NOTICE in the source repository. */\n" +
+  "\nfunction __ofbotPage() {\n" +
+  'document.dispatchEvent(new CustomEvent("ofbot:page-ran"));\n' +
   "\n/* Shadow engine (game engine + bot), started in a Worker from this function's source. */\n" +
   "function __ofbotShadowMain() {\n" +
   shadow.outputFiles[0].text +
@@ -132,7 +191,8 @@ const out =
   `window.__ofbotLoaded = ${JSON.stringify(`${kind} ${commit}`)};\n` +
   helperLayer +
   page.outputFiles[0].text +
-  "\n}\n";
+  "\n}\n}\n" +
+  loader;
 
 fs.mkdirSync(path.join(here, "dist"), { recursive: true });
 const file = path.join(here, "dist", target.file);

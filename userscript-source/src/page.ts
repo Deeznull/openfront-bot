@@ -817,6 +817,9 @@ const aidApi: AidApi = {
   },
   note: (m) => note(m),
 };
+// The vendored helper's acting features (auto-donate, auto-defend) send
+// through this same path; they never write to the WebSocket themselves.
+if (W.__ofbotHelper) W.__ofbotHelper.api = aidApi;
 
 // ------------------------------------------------------------------ control
 

@@ -2,7 +2,7 @@
 # Downloads the official OpenFront game at the version this bot was built on,
 # adds the bot files and installs. Run from this repo: bash setup.sh
 set -e
-GAME_COMMIT=v0.35.4
+GAME_COMMIT=v0.35.6
 HERE="$(cd "$(dirname "$0")" && pwd)"
 
 mkdir -p tools

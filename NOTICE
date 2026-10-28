@@ -22,7 +22,7 @@ steps download it from its official public source.
 openfront-bot.user.js (and any userscript built with userscript-source/build.mjs)
 contains a compiled copy of the OpenFront game engine (AGPL-3.0). Its
 corresponding source is the OpenFrontIO repository at the tag named in the
-script's @description (v0.35.4 for the current script;
+script's @description (v0.35.6 for the current script;
 https://github.com/openfrontio/OpenFrontIO) plus bot/BotExecution.ts (or
 bot/v34/BotExecution.ts for v0.34 builds) and userscript-source/ in this
 repository. If you share a built userscript, AGPL-3.0 requires you to also
@@ -36,9 +36,13 @@ Play aids (userscript-source/src/aids, userscript-source/vendor)
   Copyright (C) nguyenvancaokyfpt and contributors, licensed under
   AGPL-3.0-or-later. Trimmed and modified 2026 (see the README in that
   folder for the upstream commit and the changes).
-- userscript-source/src/aids/leaderboard.ts is adapted from openfront-pro
-  (https://github.com/devdanetra/openfront-pro), licensed under the MIT
-  License:
+- userscript-source/src/aids/leaderboard.ts, ranks.ts, nostr.ts and chat.ts
+  are adapted from openfront-pro (https://github.com/devdanetra/openfront-pro,
+  commit 5db105d), and userscript-source/src/aids/vendor/nostr-crypto.js is
+  copied unchanged from it. That file bundles @noble/curves 1.9.7 and
+  @noble/hashes 1.8.0 (MIT License, Copyright (c) 2022 Paul Miller,
+  https://paulmillr.com; its header is kept). openfront-pro is licensed
+  under the MIT License:
 
     MIT License
 
