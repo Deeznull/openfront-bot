@@ -20,7 +20,7 @@ function _ofbotRemoveById(ids) {
 
 let _ofbotRatioKeysBound = false;
 
-// "Boat + warship routes" and "Bold boat trails" share the boat overlay; it
+// "Boat + warship routes" and "Boat target marks" share the boat overlay; it
 // stays on while either is on.
 let _ofbotBoatsOn = false;
 let _ofbotTrailsOn = false;
@@ -110,8 +110,8 @@ window.__ofbotHelper = {
     },
     {
       key: "boatTrails",
-      label: "Bold boat trails",
-      title: "Always draws the routes of your, your team's and enemy transport boats as thick lines, with a target symbol on the tile each one lands on.",
+      label: "Boat target marks",
+      title: "Puts a target symbol on the tile where each of your, your team's and enemy transport boats will land: yours blue, allies and teammates green, others red (no route line; hover a mark to see the route).",
       set(on) {
         _ofbotHelperSafe("boatTrails", () => {
           _ofbotTrailsOn = on;

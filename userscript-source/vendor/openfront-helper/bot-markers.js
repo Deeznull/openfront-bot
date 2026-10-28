@@ -1,7 +1,7 @@
 // Vendored from openfront-helper (https://github.com/nguyenvancaokyfpt/openfront-helper-userscript)
 // @ a4c6957, engine/ingame/bot-markers.js
 // AGPL-3.0-or-later, (c) nguyenvancaokyfpt and contributors. See README.md here.
-// Trimmed: nothing. ofbot change: allied/teammate nations get a green dot.
+// Trimmed: nothing. ofbot changes: allied/teammate nations get a green dot; dots are smaller.
 
 // Bot marker overlay for nation AI players.
 
@@ -22,22 +22,22 @@
 
       #${BOT_MARKER_CONTAINER_ID} .openfront-helper-bot-dot {
         position: fixed;
-        width: 13px;
-        height: 13px;
-        margin: -6.5px 0 0 -6.5px;
+        width: 9px;
+        height: 9px;
+        margin: -4.5px 0 0 -4.5px;
         border-radius: 50%;
         background: rgba(239, 68, 68, 0.68);
         box-shadow:
-          0 0 0 2px rgba(127, 29, 29, 0.34),
-          0 0 10px rgba(239, 68, 68, 0.72);
+          0 0 0 1.5px rgba(127, 29, 29, 0.34),
+          0 0 6px rgba(239, 68, 68, 0.72);
         transform: translate(var(--bot-x), var(--bot-y));
       }
 
       #${BOT_MARKER_CONTAINER_ID} .openfront-helper-bot-dot.openfront-helper-bot-ally {
         background: rgba(34, 197, 94, 0.68);
         box-shadow:
-          0 0 0 2px rgba(20, 83, 45, 0.34),
-          0 0 10px rgba(34, 197, 94, 0.72);
+          0 0 0 1.5px rgba(20, 83, 45, 0.34),
+          0 0 6px rgba(34, 197, 94, 0.72);
       }
     `;
     (document.head || document.documentElement).appendChild(style);

@@ -45,6 +45,45 @@
     return `$${v}`;
   }
 
+  // ofbot: money colour by what the gold buys. Gray: not a Hydrogen Bomb;
+  // yellow: a Hydrogen Bomb; bold gold with a glow: a MIRV. Costs come from the
+  // game config when it can price them, else the v0.35.6 base costs (the
+  // client view can't count MIRVs already launched, so MIRV may read 25M).
+  var HBOMB_COST_FALLBACK = 5e6;
+  var MIRV_COST_FALLBACK = 25e6;
+
+  function nukeCost(game, player, type, fallback) {
+    try {
+      var c = Number(game.config().unitInfo(type).cost(game, player));
+      if (Number.isFinite(c) && c > 0) {
+        return c;
+      }
+    } catch (_error) { /* use the fallback */ }
+    return fallback;
+  }
+
+  function moneyStyle(game, player, gold) {
+    var g = Number(gold) || 0;
+    if (g >= nukeCost(game, player, "MIRV", MIRV_COST_FALLBACK)) {
+      return { rgb: "255, 191, 0", weight: "900", glow: true };
+    }
+    if (g >= nukeCost(game, player, "Hydrogen Bomb", HBOMB_COST_FALLBACK)) {
+      return { rgb: "250, 224, 71", weight: "bold", glow: false };
+    }
+    return { rgb: "156, 163, 175", weight: "bold", glow: false };
+  }
+
+  function drawMoneyText(ctx, text, x, y, ms) {
+    ctx.fillStyle = "rgba(" + ms.rgb + ", 0.98)";
+    if (ms.glow) {
+      ctx.shadowColor = "rgba(255, 191, 0, 0.85)";
+      ctx.shadowBlur = 4;
+    }
+    ctx.fillText(text, x, y);
+    ctx.shadowColor = "transparent";
+    ctx.shadowBlur = 0;
+  }
+
   function playerOverlayEnabled() {
     return (
       playerMapOverlaysEnabled &&
@@ -128,8 +167,8 @@
   var _DYN_SIZE_FACTOR = 0.4;
   var _DYN_NAME_SCALE_FACTOR = 0.25;
   var _DYN_SCALE_CAP = 3;
-  var _DYN_MONEY_SIZE_MUL = 0.46;
-  var _DYN_TROOP_BAR_SIZE_MUL = 0.26;
+  var _DYN_MONEY_SIZE_MUL = 0.36;
+  var _DYN_TROOP_BAR_SIZE_MUL = 0.2;
   var _DYN_MIN_SCREEN_PX = 5;
 
   function _getDynamicSizes(loc, transform) {
@@ -139,12 +178,12 @@
     var lineH_world = _DYN_FONT_BASE * (nameWorldSize * nameScale / _DYN_FONT_SCALE);
     var cameraScale = Number(transform.scale) || 1.8;
     var nameScreenPx = lineH_world * cameraScale;
-    var moneyFontSize = Math.max(6, Math.floor(nameScreenPx * _DYN_MONEY_SIZE_MUL));
-    var troopBarH = Math.max(3, Math.floor(nameScreenPx * _DYN_TROOP_BAR_SIZE_MUL));
-    var troopBarW = Math.max(20, Math.floor(moneyFontSize * 3.5));
+    var moneyFontSize = Math.max(5, Math.floor(nameScreenPx * _DYN_MONEY_SIZE_MUL));
+    var troopBarH = Math.max(2, Math.floor(nameScreenPx * _DYN_TROOP_BAR_SIZE_MUL));
+    var troopBarW = Math.max(16, Math.floor(moneyFontSize * 3.5));
     // Tighter spacing: money pill closer to troop bar.
-    var moneyOffsetY = Math.max(10, Math.floor(nameScreenPx * 0.9));
-    var troopOffsetY = Math.max(5, Math.floor(nameScreenPx * 0.58));
+    var moneyOffsetY = Math.max(9, Math.floor(nameScreenPx * 0.8));
+    var troopOffsetY = Math.max(5, Math.floor(nameScreenPx * 0.54));
     // Fade background when zoomed close to see the map.
     var zoomFade = nameScreenPx > 30 ? Math.max(0.4, 1.0 - (nameScreenPx - 30) / 80) : 1.0;
     var pillBgAlpha = (0.6 * zoomFade).toFixed(2);
@@ -159,9 +198,9 @@
     };
   }
 
-  function drawMoneyPill(ctx, cx, cy, text, dyn) {
+  function drawMoneyPill(ctx, cx, cy, text, dyn, ms) {
     var fs = dyn.moneyFontSize;
-    ctx.font = 'bold ' + fs + 'px "Aptos", "Segoe UI", sans-serif';
+    ctx.font = ms.weight + ' ' + fs + 'px "Aptos", "Segoe UI", sans-serif';
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.shadowColor = "#000";
@@ -171,24 +210,24 @@
     var h = Math.max(10, fs + 3);
     var x0 = cx - w / 2;
     var y0 = cy - h / 2;
-    fillRoundRect(ctx, x0, y0, w, h, 4, "rgba(7, 12, 18, " + dyn.pillBgAlpha + ")", "rgba(252, 211, 77, " + dyn.pillBdAlpha + ")");
-    ctx.fillStyle = "rgba(252, 211, 77, 0.98)";
+    fillRoundRect(ctx, x0, y0, w, h, 4, "rgba(7, 12, 18, " + dyn.pillBgAlpha + ")", "rgba(" + ms.rgb + ", " + dyn.pillBdAlpha + ")");
     ctx.shadowColor = "transparent";
     ctx.shadowBlur = 0;
-    ctx.fillText(text, cx, cy + 0.5);
+    drawMoneyText(ctx, text, cx, cy + 0.5, ms);
   }
 
-  // ofbot: "current/max" troops, colored against your own troops: within ±10%
-  // yellow, fewer red, more green; your own label stays blue.
+  // ofbot: "current/max" troops. Current is colored against your current
+  // troops and max against your max: within ±10% yellow, fewer red, more
+  // green; your own label stays blue.
   function troopPillLabel(troops, maxTroops) {
     return troopsDisplay(troops) + "/" + troopsDisplay(maxTroops);
   }
 
-  function troopCompareColor(relation, troops, myTroops) {
+  function troopCompareColor(relation, value, mine) {
     if (relation === "self") {
       return "95, 178, 255";
     }
-    var ratio = troops / Math.max(1, myTroops);
+    var ratio = value / Math.max(1, mine);
     if (ratio < 0.9) {
       return "248, 113, 113";
     }
@@ -196,6 +235,22 @@
       return "74, 222, 128";
     }
     return "250, 204, 21";
+  }
+
+  // Draws "current/max" left-aligned from x, each number in its own color.
+  function drawTroopParts(ctx, x, cy, troops, maxTroops, rgb) {
+    var cur = troopsDisplay(troops);
+    var slash = "/";
+    ctx.textAlign = "left";
+    ctx.fillStyle = "rgba(" + rgb.cur + ", 0.98)";
+    ctx.fillText(cur, x, cy + 0.5);
+    x += ctx.measureText(cur).width;
+    ctx.fillStyle = "rgba(203, 213, 225, 0.9)";
+    ctx.fillText(slash, x, cy + 0.5);
+    x += ctx.measureText(slash).width;
+    ctx.fillStyle = "rgba(" + rgb.max + ", 0.98)";
+    ctx.fillText(troopsDisplay(maxTroops), x, cy + 0.5);
+    ctx.textAlign = "center";
   }
 
   // Troops pill (shown above the troop bar when the money readout is off).
@@ -212,15 +267,14 @@
     var h = Math.max(10, fs + 3);
     var x0 = cx - w / 2;
     var y0 = cy - h / 2;
-    fillRoundRect(ctx, x0, y0, w, h, 4, "rgba(7, 12, 18, " + dyn.pillBgAlpha + ")", "rgba(" + rgb + ", " + dyn.pillBdAlpha + ")");
-    ctx.fillStyle = "rgba(" + rgb + ", 0.98)";
+    fillRoundRect(ctx, x0, y0, w, h, 4, "rgba(7, 12, 18, " + dyn.pillBgAlpha + ")", "rgba(" + rgb.cur + ", " + dyn.pillBdAlpha + ")");
     ctx.shadowColor = "transparent";
     ctx.shadowBlur = 0;
-    ctx.fillText(text, cx, cy + 0.5);
+    drawTroopParts(ctx, cx - tw / 2, cy, troops, maxTroops, rgb);
   }
 
   // Combined money + max troops pill on a single line.
-  function drawMoneyTroopPill(ctx, cx, cy, moneyText, maxTroops, dyn, troops, rgb) {
+  function drawMoneyTroopPill(ctx, cx, cy, moneyText, maxTroops, dyn, troops, rgb, ms) {
     var fs = dyn.moneyFontSize;
     var maxLabel = troopPillLabel(troops, maxTroops);
     var combined = moneyText + "  " + maxLabel;
@@ -237,26 +291,21 @@
     var x0 = cx - w / 2;
     var y0 = cy - h / 2;
 
-    fillRoundRect(ctx, x0, y0, w, h, 4, "rgba(7, 12, 18, " + dyn.pillBgAlpha + ")", "rgba(252, 211, 77, " + dyn.pillBdAlpha + ")");
+    fillRoundRect(ctx, x0, y0, w, h, 4, "rgba(7, 12, 18, " + dyn.pillBgAlpha + ")", "rgba(" + ms.rgb + ", " + dyn.pillBdAlpha + ")");
 
     ctx.shadowColor = "transparent";
     ctx.shadowBlur = 0;
 
-    // Draw money part (gold)
+    // Draw money part (colour by what it buys)
     var moneyW = ctx.measureText(moneyText).width;
-    var maxW = ctx.measureText(maxLabel).width;
     var gap = ctx.measureText("  ").width;
     var startX = cx - tw / 2;
 
-    ctx.fillStyle = "rgba(252, 211, 77, 0.98)";
     ctx.textAlign = "left";
-    ctx.fillText(moneyText, startX, cy + 0.5);
+    drawMoneyText(ctx, moneyText, startX, cy + 0.5, ms);
 
-    // Draw current/max troops part (colored against your troops)
-    ctx.fillStyle = "rgba(" + rgb + ", 0.98)";
-    ctx.fillText(maxLabel, startX + moneyW + gap, cy + 0.5);
-
-    ctx.textAlign = "center";
+    // Draw current/max troops part (each colored against yours)
+    drawTroopParts(ctx, startX + moneyW + gap, cy, troops, maxTroops, rgb);
   }
 
   // Small rounded-rect helper (background + optional border).
@@ -314,6 +363,12 @@
     } catch (_error) {
       myTroops = 1;
     }
+    let myMax = 1;
+    try {
+      myMax = Math.max(1, Number(me ? advMaxTroops(game, me) : 1) || 1);
+    } catch (_error) {
+      myMax = 1;
+    }
 
     for (let i = 0; i < _playerOverlayScan.length; i += 1) {
       const entry = _playerOverlayScan[i];
@@ -347,13 +402,16 @@
           }
         }
 
-        var troopRgb = troopCompareColor(entry.relation, liveTroops, myTroops);
+        var troopRgb = {
+          cur: troopCompareColor(entry.relation, liveTroops, myTroops),
+          max: troopCompareColor(entry.relation, entry.maxTroops, myMax),
+        };
         if (mapMoneyEnabled && mapTroopCountsEnabled) {
           // Combined: money + current/max on one line, troop bar below.
-          drawMoneyTroopPill(ctx, p.x, p.y - dyn.moneyOffsetY, formatMapGold(entry.gold), entry.maxTroops, dyn, liveTroops, troopRgb);
+          drawMoneyTroopPill(ctx, p.x, p.y - dyn.moneyOffsetY, formatMapGold(entry.gold), entry.maxTroops, dyn, liveTroops, troopRgb, moneyStyle(game, player, entry.gold));
           drawTroopBar(ctx, p.x, p.y - dyn.troopOffsetY, entry.relation, liveTroops, entry.inCombat, entry.maxTroops, dyn);
         } else if (mapMoneyEnabled) {
-          drawMoneyPill(ctx, p.x, p.y - dyn.moneyOffsetY, formatMapGold(entry.gold), dyn);
+          drawMoneyPill(ctx, p.x, p.y - dyn.moneyOffsetY, formatMapGold(entry.gold), dyn, moneyStyle(game, player, entry.gold));
         } else if (mapTroopCountsEnabled) {
           // Money off: current/max still gets its own line above the bar.
           drawMaxTroopPill(ctx, p.x, p.y - dyn.moneyOffsetY, entry.maxTroops, dyn, liveTroops, troopRgb);

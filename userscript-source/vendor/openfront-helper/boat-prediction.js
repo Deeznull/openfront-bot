@@ -19,8 +19,9 @@
 
   // Canvas-based rendering (Blon pattern). Set true to replace DOM/SVG completely.
   var _boatUseCanvas = true;
-  // ofbot: "Bold boat trails" aid. Thick outlined routes and a big target
-  // symbol at each landing tile (canvas renderer only).
+  // ofbot: "Boat target marks" aid. A big target symbol at each landing tile
+  // (yours blue, allies/teammates green, others red), no route line (canvas
+  // renderer only; the route still shows on hover).
   let boatBoldTrails = false;
   const boatPredictionDomCache = new Map();
   let boatPredictionHoverElements = null;
@@ -1033,9 +1034,14 @@
         // Marker: circle + crosshair (Blon pattern) — always shown; hover-only
         // detail (route + ETA label) is added below.
         if (markersOn && boatBoldTrails && alwaysShow) {
-          // Target symbol: dark halo, thick ring, crosshair past the ring, dot.
-          ctx.beginPath(); ctx.arc(spx, spy, 13, 0, Math.PI * 2);
-          ctx.fillStyle = "rgba(0,0,0,0.55)"; ctx.fill();
+          // Target symbol: thick ring (hollow), crosshair past the ring, dot.
+          // ofbot: yours blue, allies and teammates green, everyone else red.
+          color = t.relation === "self" ? "rgba(96, 165, 250, 0.95)"
+            : t.relation === "team" || t.relation === "ally" ? "rgba(74, 222, 128, 0.95)"
+            : "rgba(248, 113, 113, 0.95)";
+          // Semi-transparent so the map under the mark stays visible.
+          ctx.save();
+          ctx.globalAlpha = 0.55;
           ctx.beginPath(); ctx.arc(spx, spy, 10, 0, Math.PI * 2);
           ctx.lineWidth = 3; ctx.strokeStyle = color; ctx.stroke();
           ctx.beginPath();
@@ -1047,6 +1053,7 @@
           ctx.lineWidth = 2; ctx.strokeStyle = color; ctx.stroke();
           ctx.beginPath(); ctx.arc(spx, spy, 2.5, 0, Math.PI * 2);
           ctx.fillStyle = color; ctx.fill();
+          ctx.restore();
         } else if (markersOn) {
           ctx.beginPath(); ctx.arc(spx, spy, 8, 0, Math.PI * 2);
           ctx.fillStyle = t.bg; ctx.fill();
@@ -1059,20 +1066,13 @@
 
         // Route line: drawn on hover, or persistently when the relation's
         // "always show routes" toggle is on.
-        if (alwaysShow || isHovered) {
+        if ((alwaysShow && !boatBoldTrails) || isHovered) {
           var rpts = getBoatRouteScreenPoints(game, transform, t.unit, t.motionPlanUnitId, null, { x: spx, y: spy });
           if (rpts.length >= 2) {
             ctx.beginPath(); ctx.moveTo(rpts[0].x, rpts[0].y);
             for (var rj = 1; rj < rpts.length; rj++) ctx.lineTo(rpts[rj].x, rpts[rj].y);
-            if (boatBoldTrails && alwaysShow) {
-              ctx.lineJoin = "round"; ctx.lineCap = "round";
-              ctx.strokeStyle = "rgba(0,0,0,0.7)"; ctx.lineWidth = 6.5; ctx.stroke();
-              ctx.strokeStyle = color; ctx.globalAlpha = 0.95; ctx.lineWidth = 3.5;
-              ctx.stroke(); ctx.globalAlpha = 1;
-            } else {
-              ctx.strokeStyle = color; ctx.globalAlpha = 0.35; ctx.lineWidth = 1.5;
-              ctx.setLineDash([4, 4]); ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = 1;
-            }
+            ctx.strokeStyle = color; ctx.globalAlpha = 0.35; ctx.lineWidth = 1.5;
+            ctx.setLineDash([4, 4]); ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = 1;
           }
         }
 
