@@ -62,18 +62,17 @@ Tips:
 - Never let the agent play games itself in real time; it should only run the scripts.
 
 ## Results
-Each test game is a full free-for-all on a random map from the online 30+ player lobby mix (30-125 players). The 30+ limit follows TrackerFront, whose FFA win leaderboards count only lobbies of 30+ players. Every other player slot is the game's **Impossible** AI. The map's nations and tribes are added as in online lobbies. The table is the final test of bot version 0.5.5 (general mode, the same as 0.5.4): 200 games on new seeds never used in training, run once. The 0.5.0 final test on the same kind of mix won 27 of 200 (~7x). These tests ran on the game version before v0.35.0 with its map mix; no full test on v0.35 is published yet.
+Each test game is a full free-for-all on a random map from the online 30+ player lobby mix (30-125 players). The 30+ limit follows TrackerFront, whose FFA win leaderboards count only lobbies of 30+ players. Every other player slot is the game's **Impossible** AI. The map's nations and tribes are added as in online lobbies. The table is the final test of bot version 0.6.3 (the bot in userscript 0.6.3.x) on game version v0.35.4 with the v0.35 map mix: 200 FFA games and 200 default solo games, all on new seeds never used in training, run once.
 
 | Lobby size | Games | Bot wins | Bot win rate | Impossible AI win rate | Bot vs Impossible |
 |---|---|---|---|---|---|
-| 30-49 players | 75 | 41 | ~55% | 2.8% | ~20x |
-| 50-79 players | 70 | 30 | ~43% | 1.7% | ~25x |
-| 80-125 players | 55 | 28 | ~51% | 1.0% | ~51x |
-| **All FFAs** | **200** | **99** | **~50%** | **1.92%** | **~26x** |
-| Default solo game (World, 72 nations, Impossible mode) | 200 | 23 | ~12% | 1.4% | ~8x |
-| Farm: default solo game on Easy (farm mode, held to 30+ game minutes) | 10 | 10 | 100% | - | - |
+| 30-49 players | 75 | 21 | ~28% | 2.8% | ~10x |
+| 50-79 players | 70 | 21 | ~30% | 1.7% | ~18x |
+| 80-125 players | 55 | 15 | ~27% | 1.0% | ~27x |
+| **All FFAs** | **200** | **57** | **~29%** | **1.92%** | **~15x** |
+| Default solo game (World, 72 nations, Impossible mode) | 200 | 10 | ~5% | 1.4% | ~4x |
 
-All 10 farm games ended in a win between 32 and 36 game minutes.
+Older results on game version v0.34.24 (with its own map mix) can't be compared directly with these: bot 0.5.5 won 99 of 200 FFAs there (~50%, ~26x) and 23 of 200 default solo games (~12%). Farm mode (default solo game on Easy, held to 30+ game minutes) won 10 of 10 games with 0.5.5, each between 32 and 36 game minutes; it hasn't been re-tested on v0.35.
 
 The bot was not trained by reading or exploiting the Impossible AI's source code. The Impossible AI is only used as an opponent. The goal was strategy that also works against human players in online games.
 
