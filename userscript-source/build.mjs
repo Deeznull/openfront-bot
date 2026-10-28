@@ -10,6 +10,9 @@ import { execSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+// Optional openfront-helper features (window.__ofbotHelper), vendored as plain
+// scripts and inserted unbundled into the page part, ahead of the page bundle.
+import { buildHelperLayer } from "./vendor/openfront-helper/assemble.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const argRepo = process.argv.indexOf("--repo");
@@ -115,6 +118,8 @@ ${target.update ? `// @updateURL    ${target.update}\n// @downloadURL  ${target.
 // ==/UserScript==
 `;
 
+const helperLayer = await buildHelperLayer({ minify: common.minify && esbuild.transform });
+
 const out =
   header +
   "\n/* Shadow engine (game engine + bot), started in a Worker from this function's source. */\n" +
@@ -125,6 +130,7 @@ const out =
   '  console.warn("[ofbot] build " + window.__ofbotLoaded + " is already running here; this one stays off.");\n' +
   "} else {\n" +
   `window.__ofbotLoaded = ${JSON.stringify(`${kind} ${commit}`)};\n` +
+  helperLayer +
   page.outputFiles[0].text +
   "\n}\n";
 

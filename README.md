@@ -28,6 +28,11 @@ This repository does not include the game's source code. The game can be downloa
 - **Farm option:** plays the 5 Easy solo games per UTC day that give XP, at Max speed, each held until 30+ game minutes for the most XP. Then it joins public FFA games; untick **…then public FFA games** to stop after the solo games.
 - **How to farm XP fast:** open the game in several tabs of the same browser (5 to 10 tabs work), start the bot in each, and tick **Farm: Easy solo games on repeat** and **…then public FFA games**. One tab plays the daily solo games, and every tab joins a different public FFA game, so the bot keeps farming games on its own. This can get an account to level 100 in about a day.
 - **Panel:** **–/+** folds the panel; **Options** hides the checkboxes.
+- **Play aids** (all off by default, each with its own checkbox; they work with the bot on or off, for your own play):
+  - Hold-key macros: hold **X** and left-click the map to launch as many Atom Bombs as your gold pays for (max 50); hold **Z** / **V** / **H** and click to build a Port / SAM / Missile Silo, or upgrade yours there by up to 50 levels.
+  - Troop timing + safe donation: your troops against the cap, where growth is fastest, when to wait or attack, and how much you can donate keeping a 35% reserve.
+  - Live standings with team totals and an elimination feed.
+  - Overlays and panels from [openfront-helper-userscript](https://github.com/nguyenvancaokyfpt/openfront-helper-userscript): nuke landing and trajectory, boat and warship routes, incoming attacks, build timers, gold per minute, team buildings, an advisor panel, and more (see `userscript-source/README.md`).
 
 The script is made for game version v0.35.4 (since script 0.6.3.9; 0.6.1-0.6.3.8 were made for v0.35.2, 0.6.0 for v0.35.0; older 0.5.x scripts were made for v0.34.24 and don't work on v0.35). On newer versions it keeps playing by following the live game, until a version changes too much; then it must be rebuilt (see `userscript-source/README.md`). Installed copies update themselves when a rebuilt script is pushed here.
 

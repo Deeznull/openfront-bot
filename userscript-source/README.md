@@ -32,6 +32,24 @@ Tampermonkey's **Dashboard → Utilities → Import from file**.
      panel counts the games.
    - The panel can be dragged and collapsed. Its settings are saved in
      `localStorage`.
+   - **Play aids ▸** unfolds a list of optional helpers for your own play,
+     all off by default. They work with the bot on or off. Each box they
+     open can be dragged by its header and folded with –.
+     - **Hold-key macros**: hold X and left-click the map to launch as many
+       Atom Bombs as the gold pays for (max 50, the game's limit per
+       intent); hold Z / V / H and click to build a Port / SAM Launcher /
+       Missile Silo, or upgrade ours there by up to 50 levels. The click
+       doesn't reach the game while the key is held. B (the game's boat key)
+       is left alone, so the silo is on H. The intents go out ahead of the
+       bot's, through the same rate limiter.
+     - **Troop timing + safe donation**: troops against the cap, the mark
+       where troop growth is fastest, growth per second, a wait/attack cue,
+       what an attack at the current ratio sends, and the troops above a 35%
+       reserve that are safe to donate.
+     - **Live standings + eliminations**: players by land share, team
+       totals, and recent eliminations of nations and humans.
+     - The overlays from `vendor/openfront-helper` (one checkbox each; the
+       list is in that folder's README).
    - **Multi-tab bypass (anti-vigilant mode):** the game's multi-tab detector
      (the pop-up that freezes you for 10 s when it sees another tab) is
      neutralized in every mode, public included, so the bot can run in several
@@ -221,6 +239,8 @@ then http://localhost:9000), install the script, and start a Singleplayer game.
 | `src/feed.ts` | Reads hashes and the per-tick update the mirror needs, tolerant of format changes |
 | `src/shadow-entry.ts` | Worker or page entry point for the shadow bundle |
 | `src/engine-main.ts`, `src/engine-v34.ts` | One engine API for both repository layouts (picked by `build.mjs`) |
+| `src/aids/` | Play aids: hold-key macros, troop timing + donation box, live standings, the panel list |
+| `vendor/openfront-helper/` | Overlays from openfront-helper-userscript (AGPL-3.0-or-later), a plain script put before the bundle |
 | `build.mjs` | esbuild bundle that writes the userscript (`--test` builds the test) |
 | `test/sim.ts` | Headless integration test |
 | `test/shadow-thread.ts`, `test/node-*.ts` | Test shadow worker thread; map loading per engine |

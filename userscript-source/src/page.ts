@@ -17,6 +17,7 @@ import { type FeedEntry, feedEntry, feedTransfers, findHashes } from "./feed";
 import { FARM_TWEAKS } from "./farm-params";
 import { FfaClaims, holdLock, JOIN_WAIT_MS, joinable, LockClaims, SKIP_MS } from "./ffa-claim";
 import { type GameRec, recAll, recExport, recFinish, recNew, recSave } from "./rec";
+import { type Aid, type AidApi, allAids, setAid } from "./aids";
 
 declare function __ofbotShadowMain(): void;
 declare const __OFBOT_VERSION__: string;
@@ -40,6 +41,8 @@ interface Settings {
   farmSolo?: boolean; // false: the farm skips solo games (no panel option; headless recorder)
   min: boolean; // panel collapsed to its header
   opts: boolean; // options (checkboxes) folded away
+  aids?: Record<string, boolean>; // play aids on/off by key (src/aids)
+  aidsOpen?: boolean; // play aids list unfolded
   v?: number; // settings format: 3 = no separate turbo option (farm has it)
   x: number;
   y: number;
@@ -765,7 +768,55 @@ function pump() {
   const moves = gone.filter((i) => i.type === "attack" || i.type === "boat");
   if (moves.length && c.shadow) c.shadow.post({ t: "dropped", intents: moves });
 }
-setInterval(pump, 100);
+
+// Play aids' intents (a hotkey macro the player pressed): sent with the bot
+// on or off, ahead of the bot's queue, through the same rate limiter.
+let aidQueue: { i: Intent; at: number }[] = [];
+function pumpAids() {
+  const c = ctx;
+  if (!c || !c.allowed) {
+    aidQueue = [];
+    return;
+  }
+  const now = performance.now();
+  aidQueue = aidQueue.filter((q) => now - q.at < 3000);
+  while (aidQueue.length && canSend(c)) {
+    if (!c.handlers || !c.bus) {
+      c.bus = findBus();
+      c.handlers = c.bus ? handlersOf(c.bus) : null;
+      if (!c.handlers) return;
+    }
+    const { i } = aidQueue.shift()!;
+    const route = ROUTES[i.type];
+    const handler = route && c.handlers[route[0]];
+    if (!handler) continue;
+    try {
+      handler(route[1](i));
+      if (c.gameType !== "Singleplayer") {
+        bucket.sec++;
+        bucket.min.push(now);
+      }
+    } catch (e) {
+      console.warn("[ofbot] aid send failed", i, e);
+      c.bus = c.handlers = null;
+      return;
+    }
+  }
+}
+setInterval(() => {
+  pumpAids();
+  pump();
+}, 100);
+
+const aidApi: AidApi = {
+  send(i) {
+    if (!ctx?.allowed) return false;
+    aidQueue.push({ i, at: performance.now() });
+    pumpAids();
+    return true;
+  },
+  note: (m) => note(m),
+};
 
 // ------------------------------------------------------------------ control
 
@@ -1183,6 +1234,8 @@ function buildUI() {
     <label title="Farm: once the day's XP-paying solo games are used, join public FFA games (the bot plays; next lobby after it dies or the game ends)"><input type="checkbox" class="pub"> …then public FFA games</label>
     <div class="of ex" title="Download a log of the games played in this browser (map, size, place, checkpoints), to study them with their replays"></div>
     </div>
+    <div class="of af" title="Optional helpers for your own play; they work with the bot on or off"></div>
+    <div class="o ad"></div>
     <div class="m"></div>
   </div>
 </div>`;
@@ -1255,6 +1308,7 @@ function buildUI() {
     fold.textContent = settings.opts ? "Options ▸" : "Options ▾";
   };
   showFolds();
+  buildAids(q<HTMLElement>(".af"), q<HTMLElement>(".ad"));
   x.onclick = () => {
     settings.min = !settings.min;
     saveSettings();
@@ -1291,6 +1345,39 @@ function buildUI() {
     host.addEventListener(ev, (e) => e.stopPropagation());
   }
   render();
+}
+
+/** The "Play aids" fold: one checkbox per aid, each started when ticked. */
+function buildAids(fold: HTMLElement, list: HTMLElement) {
+  const aids: Aid[] = allAids();
+  settings.aids ??= {};
+  const show = () => {
+    list.style.display = settings.aidsOpen ? "" : "none";
+    const n = aids.filter((a) => settings.aids![a.key] ?? a.def).length;
+    fold.textContent = `Play aids${n ? ` (${n} on)` : ""} ${settings.aidsOpen ? "▾" : "▸"}`;
+  };
+  for (const a of aids) {
+    const label = document.createElement("label");
+    label.title = a.title;
+    const box = document.createElement("input");
+    box.type = "checkbox";
+    box.checked = settings.aids[a.key] ?? a.def;
+    box.onchange = () => {
+      settings.aids![a.key] = box.checked;
+      saveSettings();
+      setAid(a, box.checked, aidApi);
+      show();
+    };
+    label.append(box, ` ${a.label}`);
+    list.appendChild(label);
+    if (box.checked) setAid(a, true, aidApi);
+  }
+  fold.onclick = () => {
+    settings.aidsOpen = !settings.aidsOpen;
+    saveSettings();
+    show();
+  };
+  show();
 }
 
 /** Put the panel at its saved spot, pulled back on screen if it's off it. */
