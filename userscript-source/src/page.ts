@@ -16,6 +16,7 @@ import { GameUpdateType } from "ofenums";
 import { type FeedEntry, feedEntry, feedTransfers, findHashes } from "./feed";
 import { FARM_TWEAKS } from "./farm-params";
 import { FfaClaims, holdLock, JOIN_WAIT_MS, joinable, LockClaims, SKIP_MS } from "./ffa-claim";
+import { type GameRec, recAll, recExport, recFinish, recNew, recSave } from "./rec";
 
 declare function __ofbotShadowMain(): void;
 declare const __OFBOT_VERSION__: string;
@@ -36,6 +37,7 @@ interface Settings {
   farm: boolean; // also turbo: Max speed, next turn as soon as the last is done
   farmGames: number;
   farmPublic: boolean; // farm: public FFA games once the day's XP solo games are used
+  farmSolo?: boolean; // false: the farm skips solo games (no panel option; headless recorder)
   min: boolean; // panel collapsed to its header
   opts: boolean; // options (checkboxes) folded away
   v?: number; // settings format: 3 = no separate turbo option (farm has it)
@@ -103,6 +105,7 @@ interface GameCtx {
   stats: any;
   bus: any;
   handlers: Record<string, (e: any) => void> | null;
+  rec: GameRec | null;
 }
 
 let ctx: GameCtx | null = null;
@@ -323,6 +326,7 @@ function hook(w: Worker) {
 
 function disposeCtx(reason: string) {
   if (!ctx) return;
+  if (ctx.rec) recFinish(ctx.rec);
   ctx.shadow?.stop();
   ctx = null;
   note(reason);
@@ -373,6 +377,7 @@ function onInit(w: Worker, realPost: GameCtx["realPost"], init: any) {
     stats: null,
     bus: null,
     handlers: null,
+    rec: allowed ? recNew(init, __OFBOT_VERSION__) : null,
   };
   if (!allowed) {
     note(reason);
@@ -437,7 +442,7 @@ function startShadow(c: GameCtx, onPage: boolean) {
 }
 
 /**
- * Older engines put the map files in the init message. Newer ones (openfront.io
+ * Older engines put the map files in the init message. Newer ones (the live site,
  * v0.34) send only `cdnBase` and the worker fetches the map itself; the shadow
  * does the same, with the page's asset manifest for the hashed file names.
  */
@@ -580,6 +585,13 @@ function onShadowMessage(c: GameCtx, m: any) {
       break;
     case "sync":
       c.sync = m;
+      break;
+    case "rec":
+      if (!c.rec) break;
+      c.rec.cps.push(m.cp);
+      c.rec.botOn ||= botOn;
+      if (m.cp.died) c.rec.died = m.cp.tick;
+      if (m.cp.died || c.rec.cps.length % 10 === 1) recSave(c.rec);
       break;
     case "diverged":
       // Ownership differs while no hash has matched for a while (hashes
@@ -893,7 +905,7 @@ function farmTick() {
   if (farmOnHome()) {
     farmAwayAt = 0;
     const today = soloToday();
-    if (today !== null && today >= soloPerDay) {
+    if (settings.farmSolo === false || (today !== null && today >= soloPerDay)) {
       farmStartAt = 0;
       if (settings.farmPublic) {
         farmJoinPublic(now);
@@ -966,6 +978,20 @@ function farmTick() {
   }
 }
 setInterval(farmTick, 1000);
+
+// Game record: the first win-modal sight (our death or the game's end).
+setInterval(() => {
+  const r = ctx?.rec;
+  if (!r || r.end) return;
+  const wm = document.querySelector("win-modal") as any;
+  if (!wm?.isVisible) return;
+  r.end = { tick: ctx!.realTick, title: String(wm._title ?? ""), alive: r.died === null };
+  recSave(r);
+  render();
+}, 1000);
+addEventListener("pagehide", () => {
+  if (ctx?.rec) recFinish(ctx.rec);
+});
 
 // Public FFA (owner 2026-10-15: "best xp per second"). XP per game is
 // (50 played + 17 per game minute alive, up to 30 + placement + win) at 1x,
@@ -1155,6 +1181,7 @@ function buildUI() {
     <label><input type="checkbox" class="share"> Send/receive troops &amp; gold with them</label>
     <label title="Starts Easy solo games one after another, played by the bot at Max speed with turbo. Uncheck to stop."><input type="checkbox" class="farm"> Farm: Easy solo games on repeat</label>
     <label title="Farm: once the day's XP-paying solo games are used, join public FFA games (the bot plays; next lobby after it dies or the game ends)"><input type="checkbox" class="pub"> …then public FFA games</label>
+    <div class="of ex" title="Download a log of the games played in this browser (map, size, place, checkpoints), to study them with their replays"></div>
     </div>
     <div class="m"></div>
   </div>
@@ -1198,6 +1225,10 @@ function buildUI() {
     settings.farmPublic = ui!.pub.checked;
     saveSettings();
   };
+  const ex = q<HTMLElement>(".ex");
+  ex.textContent = "Export game log";
+  ex.onclick = () => recExport();
+  ex.onpointerenter = () => (ex.textContent = `Export game log (${recAll().length} games)`);
   ui.auto.checked = settings.autoStart;
   ui.emo.checked = settings.emojis;
   ui.btn.onclick = () => setBot(!botOn);

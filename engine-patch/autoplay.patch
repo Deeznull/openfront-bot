@@ -1,8 +1,8 @@
 diff --git a/packages/engine-api/src/Schemas.ts b/packages/engine-api/src/Schemas.ts
-index 909bb3956..e27a69a95 100644
+index c20a9cc87..2eb201eab 100644
 --- a/packages/engine-api/src/Schemas.ts
 +++ b/packages/engine-api/src/Schemas.ts
-@@ -293,6 +293,8 @@ export const GameConfigSchema = z.object({
+@@ -281,6 +281,8 @@ export const GameConfigSchema = z.object({
    infiniteGold: z.boolean(),
    infiniteTroops: z.boolean(),
    instantBuild: z.boolean(),
@@ -12,18 +12,18 @@ index 909bb3956..e27a69a95 100644
    disableAlliances: z.boolean().nullable().optional(),
    disableClanTags: z.boolean().optional(),
 diff --git a/packages/engine/src/GameRunner.ts b/packages/engine/src/GameRunner.ts
-index 7c88eb772..cd775a60a 100644
+index 2880e69ce..2fe814847 100644
 --- a/packages/engine/src/GameRunner.ts
 +++ b/packages/engine/src/GameRunner.ts
-@@ -7,6 +7,7 @@ import {
-   HumanDisconnects,
+@@ -6,6 +6,7 @@ import {
+   GameUpdates,
    HumanStatsSnapshot,
    NameViewData,
 +  Nation,
    PlayerActions,
    PlayerBorderTiles,
    PlayerBuildableUnitType,
-@@ -26,6 +27,7 @@ import { loadTerrainMap } from "@openfront/engine-lib/game/TerrainMapLoader";
+@@ -25,6 +26,7 @@ import { loadTerrainMap } from "@openfront/engine-lib/game/TerrainMapLoader";
  import { PseudoRandom } from "@openfront/engine-lib/PseudoRandom";
  import { simpleHash } from "@openfront/engine-lib/Util";
  import { EngineConfig } from "./configuration/EngineConfig";
@@ -31,7 +31,7 @@ index 7c88eb772..cd775a60a 100644
  import { DoomsdayClockExecution } from "./execution/DoomsdayClockExecution";
  import { Executor } from "./execution/ExecutionManager";
  import { RecomputeRailClusterExecution } from "./execution/RecomputeRailClusterExecution";
-@@ -93,9 +95,34 @@ export async function createGameRunner(
+@@ -92,9 +94,34 @@ export async function createGameRunner(
      callBack,
    );
    gr.init();
@@ -67,10 +67,10 @@ index 7c88eb772..cd775a60a 100644
  function loadGameMap(
    config: Pick<GameStartInfo["config"], "gameMap" | "gameMapSize">,
 diff --git a/resources/lang/en.json b/resources/lang/en.json
-index 5130cc7d3..6957f0078 100644
+index 455fc88d9..1b57f0e8d 100644
 --- a/resources/lang/en.json
 +++ b/resources/lang/en.json
-@@ -1016,6 +1016,7 @@
+@@ -1001,6 +1001,7 @@
      "infinite_gold": "Infinite gold",
      "infinite_troops": "Infinite troops",
      "instant_build": "Instant build",

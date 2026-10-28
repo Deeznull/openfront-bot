@@ -269,6 +269,7 @@ export function createShadow(post: Post, onPage = false) {
         r.addTurn(turns[fed++]);
         r.executeNextTick();
         if (!CAN_SNAPSHOT) mirror.sync(r.game);
+        recStep(r.game);
         if (enabled && turns.length - fed <= MAX_LAG_FOR_BOT) botStep(r.game);
         if (onPage && performance.now() - t0 > SLICE_MS) {
           setTimeout(drain, 0);
@@ -329,6 +330,52 @@ export function createShadow(post: Post, onPage = false) {
       return !dead && active.call(this);
     };
     return ex;
+  }
+
+  // Game record (page.ts keeps it): a checkpoint every 30 s, and one at our
+  // death with the attackers that were on us then, so a lost game can be
+  // studied later next to its replay.
+  let recAlive = false;
+  let recIncoming: any[] = [];
+  function recStep(g: Game) {
+    if (!clientID) return;
+    const me = g.playerByClientID(clientID);
+    if (!me || g.inSpawnPhase()) return;
+    const alive = me.isAlive();
+    const died = recAlive && !alive;
+    if (alive) recAlive = true;
+    const t = g.ticks();
+    if (alive && t % 20 === 0) {
+      const inc = new Map<string, any>();
+      for (const a of me.incomingAttacks()) {
+        const p: any = a.attacker();
+        const e = inc.get(p.id()) ?? { name: p.displayName(), type: p.type(), troops: 0 };
+        e.troops += Math.round(a.troops());
+        inc.set(p.id(), e);
+      }
+      recIncoming = [...inc.values()].sort((a, b) => b.troops - a.troops).slice(0, 3);
+    }
+    if (!died && (!alive || t % 300 !== 0)) return;
+    const live = g.players().filter((p: any) => p.isAlive() && p.type() !== "BOT");
+    live.sort((a, b) => b.numTilesOwned() - a.numTilesOwned());
+    const land = Math.max(1, (g as any).numLandTiles());
+    const top: any = live[0];
+    post({
+      t: "rec",
+      cp: {
+        tick: t,
+        died,
+        tiles: me.numTilesOwned(),
+        share: +(me.numTilesOwned() / land).toFixed(4),
+        rank: alive ? live.indexOf(me) + 1 : live.length + 1,
+        left: live.length,
+        troops: Math.round(me.troops()),
+        gold: Number(me.gold()),
+        allies: me.allies().length,
+        top: top ? { name: top.displayName(), type: top.type(), share: +(top.numTilesOwned() / land).toFixed(4) } : null,
+        incoming: recIncoming,
+      },
+    });
   }
 
   function botStep(g: Game) {

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Modified from and built on the OpenFront game's Nation AI (copyright its original authors). Changes by openfront-bot contributors, 2026. See NOTICE.
 /**
  * Code bot for a Human player (CLI tuning in tests/bot, solo autoplay): scored spawn choice + the Nation AI
  * behaviors (attack/expand, structures, alliances, nukes, warships) with
@@ -182,7 +184,7 @@ export interface BotParams {
   nukeProv: number; // 1 = nukeGate also blocks retaliation nukes (rl768: the 2.2x nuke was a reply to Imp11's attack and drew a 1.03M wave)
   earlySilo: number; // >0 = replay R08: first missile silo from this minute (gold saved for it once half-affordable), a second 3 min later
   counterNuke: number; // 1 = replay R09: an enemy nuke aimed within 30 tiles of our land gets a nuke back at its owner within 30 s (bypasses nukeGate)
-  betrayOk: number; // >0 (needs betray 0) = situational betrayal (anon1595 state study: victim weaker in 94%, strike within 30 s in 90%; AL-021): from betrayMin, break with a bordering human/Nation ally whose troops < betrayOk x ours and tiles < 0.7x ours, while we are not under real attack; the inherited AI attacks it at once. Never tribes or kin.
+  betrayOk: number; // >0 (needs betray 0) = situational betrayal (replay state study: victim weaker in 94%, strike within 30 s in 90%; AL-021): from betrayMin, break with a bordering human/Nation ally whose troops < betrayOk x ours and tiles < 0.7x ours, while we are not under real attack; the inherited AI attacks it at once. Never tribes or kin.
   betrayMin: number; // minutes before betrayOk may fire
   betrayGrade: number; // 1 = betrayOk uses the traitorK gates: victim strength incl. its local helpers, discounted non-ally threat guard (traitorThreat), leaving allies count as non-allies
   lapseStrike: number; // >0 = replay R10: when an alliance lapses, attack the bordering ex-ally within 60 s if its troops < lapseStrike x ours
@@ -208,7 +210,7 @@ export interface BotParams {
   capBot: number; // >0 = stalled at the troop cap: sends at barbarians may use up to this fraction of our troops, ignoring the keep-0.9x-neighbour cap
   capPush: number; // >0 = stalled at the troop cap (>=95% max, no land gain for 30 s): pvpRatio drops to this vs a human others already hit
   renewLead: number; // >0 = send renewals only once <= renewLead seconds are left (inside the 30 s prompt window, so a late intent still lands in it); 0 = as soon as the window opens
-  humanAccept: number; // 1 = graded accept of human requests (anon1595 Q2): a traitor only if strong; a bordering human under 0.5x our tiles and not strong is room to grow, not an ally
+  humanAccept: number; // 1 = graded accept of human requests (replay Q2): a traitor only if strong; a bordering human under 0.5x our tiles and not strong is room to grow, not an ally
   doomAware: number; // 1 = Doomsday Clock lobbies: when our land is (or within 60 s will be) under the bar and we are not the leader, grab land with the troops the drain would take anyway
   holdWin: number; // >0 = no new land attacks or boats before this many game minutes once our land share is within holdGap points of the win line (solo farm: XP pays 17 per game minute up to 30, so an early win forfeits it)
   holdGap: number; // percentage points under the win line where holdWin stops taking land
@@ -2530,7 +2532,7 @@ export class BotExecution extends NationExecution {
     }
   }
 
-  // Situational betrayal (owner rule; anon1595 state study n=136: victim
+  // Situational betrayal (owner rule; replay state study n=136: victim
   // weaker in 94%, struck within 30 s in 90%). Replaces the closed
   // maybeBetray: true makes the inherited AI attack the victim right away.
   public betrayals = 0;
