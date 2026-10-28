@@ -26,6 +26,7 @@ This repository does not include the game's source code. The game can be downloa
 
 - **Modes:** the general mode plays online games. Solo games on Easy switch to a farm mode by themselves.
 - **Farm option:** plays the 5 Easy solo games per UTC day that give XP, at Max speed, each held until 30+ game minutes for the most XP. Then it joins public FFA games; untick **…then public FFA games** to stop after the solo games.
+- **How to farm XP fast:** open the game in several tabs of the same browser (5 to 10 tabs work), start the bot in each, and tick **Farm: Easy solo games on repeat** and **…then public FFA games**. One tab plays the daily solo games, and every tab joins a different public FFA game, so the bot keeps farming games on its own. This can get an account to level 100 in about a day.
 - **Panel:** **–/+** folds the panel; **Options** hides the checkboxes.
 - **Multi-tab bypass (anti-vigilant mode):** the game's multi-tab detector (the pop-up that freezes you for 10s when it sees another tab) is neutralized in every mode, public included — so you can run the bot in several tabs at once. The detector is purely client-side, and the IP/device/"reported" it shows are fake values generated locally, never sent anywhere.
 
