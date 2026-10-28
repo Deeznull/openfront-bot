@@ -17,7 +17,7 @@ This repository does not include the game's source code. The game can be downloa
 - `engine-patch/autoplay.patch`: a small game patch that lets the bot play solo games.
 - `userscript-source/`: the source code and build script of the Tampermonkey script.
 - `review-tools/`: scripts for studying replays and game data.
-- `results/online-ffa-mix/`: online FFA map mix used to pick training lobbies (`ffa_cells_v035.json` for v0.35.0, `ffa_cells.json` for v0.34).
+- `results/online-ffa-mix/`: online FFA map mix used to pick training lobbies (`ffa_cells_v035.json` for v0.35.0).
 
 ## 1. Using the bot in a game (Tampermonkey)
 1. Install the [Tampermonkey](https://www.tampermonkey.net/) browser extension (Chrome, Edge, Firefox, ...). In Chrome, open the extension's details and turn on **Allow User Scripts**.
