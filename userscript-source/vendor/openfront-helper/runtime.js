@@ -193,12 +193,6 @@ const QUICK_PANEL_STYLE_ID = "openfront-helper-quick-panel-styles";
 const QUICK_PANEL_POS_KEY = "openfront-helper-quick-panel-pos";
 let quickPanelEnabled = false;
 
-// Retaliation HUD: semi-auto nuke counter-attack confirmation card.
-const RETALIATION_CONTAINER_ID = "openfront-helper-retaliation-layer";
-const RETALIATION_STYLE_ID = "openfront-helper-retaliation-styles";
-let retaliationEnabled = false;
-let retaliationInterval = null;
-
 // Hide ads: CSS injection.
 const HIDE_ADS_STYLE_ID = "openfront-helper-hide-ads-style";
 // Attack-ratio hotkey: Shift+1..0 set attack ratio 10%..100%.

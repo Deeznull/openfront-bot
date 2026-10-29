@@ -20,17 +20,14 @@ function _ofbotRemoveById(ids) {
 
 let _ofbotRatioKeysBound = false;
 
-// "Boat + warship routes" and "Boat target marks" share the boat overlay; it
-// stays on while either is on.
-let _ofbotBoatsOn = false;
-let _ofbotTrailsOn = false;
-
-function _ofbotSyncBoatPrediction() {
-  boatBoldTrails = _ofbotTrailsOn;
-  setBoatPredictionEnabled(_ofbotBoatsOn || _ofbotTrailsOn, {
-    alwaysOwnRoutes: _ofbotTrailsOn,
-    alwaysTeamRoutes: _ofbotTrailsOn,
-    alwaysEnemyRoutes: _ofbotTrailsOn,
+// "Boat target marks" drives the boat overlay (the old "Boat + warship
+// routes" toggle and the warship routes were removed in 0.7.2.2).
+function _ofbotSetBoatMarks(on) {
+  boatBoldTrails = on;
+  setBoatPredictionEnabled(on, {
+    alwaysOwnRoutes: on,
+    alwaysTeamRoutes: on,
+    alwaysEnemyRoutes: on,
   });
 }
 
@@ -97,26 +94,11 @@ window.__ofbotHelper = {
       },
     },
     {
-      key: "boats",
-      label: "Boat + warship routes",
-      title: "Marks where transport boats will land (hover a mark for its route and ETA) and draws warship routes.",
-      set(on) {
-        _ofbotHelperSafe("boats", () => {
-          _ofbotBoatsOn = on;
-          _ofbotSyncBoatPrediction();
-          setWarshipRoutesEnabled(on);
-        });
-      },
-    },
-    {
       key: "boatTrails",
       label: "Boat target marks",
       title: "Puts a target symbol on the tile where each of your, your team's and enemy transport boats will land: yours blue, allies and teammates green, others red (no route line; hover a mark to see the route).",
       set(on) {
-        _ofbotHelperSafe("boatTrails", () => {
-          _ofbotTrailsOn = on;
-          _ofbotSyncBoatPrediction();
-        });
+        _ofbotHelperSafe("boatTrails", () => _ofbotSetBoatMarks(on));
       },
     },
     {
@@ -162,14 +144,6 @@ window.__ofbotHelper = {
       title: "One notice when the match reaches 5 minutes.",
       set(on) {
         _ofbotHelperSafe("timeAlert", () => setGameTimeAlertEnabled(on, 300));
-      },
-    },
-    {
-      key: "retal",
-      label: "Nuke-incoming alert",
-      title: "Card when an enemy nuke targets you, with a button that moves the camera to it.",
-      set(on) {
-        _ofbotHelperSafe("retal", () => setRetaliationEnabled(on));
       },
     },
     {

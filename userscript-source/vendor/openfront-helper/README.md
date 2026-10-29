@@ -33,7 +33,7 @@ before the page bundle.
 | `bot-markers.js` | same name | Allied/teammate nations get a green dot instead of red, so the game's alliance icon stays readable; dots are smaller (9 px instead of 13 px) |
 | `boat-prediction.js` | same name | `boatBoldTrails` flag (set by the glue's "Boat target marks" toggle): a hollow, semi-transparent ringed crosshair on every landing tile (yours blue, allies/teammates green, others red) and no always-on route line (the thin route still shows on hover) |
 | `name-overlay.js` | same name | The blue "/max" troops label shows "current/max"; current is colored against your current troops and max against your max: within ±10% yellow, fewer red, more green (yours stays blue). Gold is gray below a Hydrogen Bomb's cost, yellow from it, bold gold with a glow from a MIRV's cost (costs from the game config, else 5M / 25M). Money and troop tags are about 20% smaller |
-| `alliances.js`, `gold-per-minute.js`, `team-build-stats.js`, `nuke-prediction.js`, `warship-routes.js`, `boat-panel.js`, `estate-panel.js`, `map-overlay-scheduler.js`, `advisor-intel.js`, `attack-highlight.js`, `nuke-trajectory.js`, `advisor-panel.js`, `retaliation-hud.js`, `attack-ratio-hotkey.js`, `build-timer.js`, `game-time-alert.js` | same names | none |
+| `alliances.js`, `gold-per-minute.js`, `team-build-stats.js`, `nuke-prediction.js`, `boat-panel.js`, `estate-panel.js`, `map-overlay-scheduler.js`, `advisor-intel.js`, `attack-highlight.js`, `nuke-trajectory.js`, `advisor-panel.js`, `attack-ratio-hotkey.js`, `build-timer.js`, `game-time-alert.js` | same names | none |
 | `universal-path-finding.js` | `auto-bot/nukeBehavior.js` (lines 95-321), `auto-bot/portutil.js` (`within`, lines 146-150) | Only the Bezier and parabola path-finder math that nuke-trajectory uses. Nothing else from the auto-bot. |
 | `auto-leave.js`, `sos-defense.js` | same names | none (`sos-defense` gets `emojiId`/`enqueueSignal` from `00-shims.js`) |
 | `auto-donate.js` | `auto-donate.js` | An empty target list means every friendly human player (teammate or ally, not nation bots) instead of nobody. `sendGamePacket` and the settings cache are shims (see below). |
@@ -62,9 +62,11 @@ before the page bundle.
   the game's own leaderboard) and the advisor panel. `gold-per-minute.js` and
   `advisor-panel.js` stay in the build because other features share their
   helpers and constants.
-- **No boats panel since 0.7.1.1:** the "Boat + warship routes" toggle keeps
-  the landing marks and warship routes but no longer opens `boat-panel.js`'s
-  panel (the file stays in the build).
+- **No boats panel since 0.7.1.1:** `boat-panel.js`'s panel is never opened
+  (the file stays in the build).
+- **Removed in 0.7.2.2:** the "Boat + warship routes" toggle (its boat landing
+  marks are covered by "Boat target marks"), `warship-routes.js` and the
+  "Nuke-incoming alert" (`retaliation-hud.js`); both files are gone.
 
 ## Acting features
 
