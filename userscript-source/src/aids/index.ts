@@ -8,11 +8,12 @@ import { macros } from "./macros";
 import { ranksAid } from "./ranks";
 import { trailsAid } from "./trails";
 import { troopsAid } from "./troops";
+import { trollAid } from "./troll";
 
 export type { Aid, AidApi, Intent } from "./core";
 
 export function allAids(): Aid[] {
-  const out: Aid[] = [macros, troopsAid, trailsAid, ranksAid];
+  const out: Aid[] = [macros, troopsAid, trailsAid, ranksAid, trollAid];
   const helper = (window as any).__ofbotHelper?.features ?? [];
   for (const f of helper) {
     if (!f || typeof f.key !== "string" || typeof f.set !== "function") continue;

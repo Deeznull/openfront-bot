@@ -796,7 +796,9 @@ function pump() {
 }
 
 // Play aids' intents (a hotkey macro the player pressed): sent with the bot
-// on or off, ahead of the bot's queue, through the same rate limiter.
+// on or off, ahead of the bot's queue, through the same rate limiter. Aid
+// chat (troll chat, SOS emojis) waits like the bot's once the minute bucket
+// is at 100, so it never eats the moves' budget.
 let aidQueue: { i: Intent; at: number }[] = [];
 function pumpAids() {
   const c = ctx;
@@ -812,7 +814,12 @@ function pumpAids() {
       c.handlers = c.bus ? handlersOf(c.bus) : null;
       if (!c.handlers) return;
     }
-    const { i } = aidQueue.shift()!;
+    let k = 0;
+    if (c.gameType !== "Singleplayer" && bucket.min.length >= 100) {
+      k = aidQueue.findIndex((q) => prio(q.i.type) < 2);
+      if (k < 0) return;
+    }
+    const { i } = aidQueue.splice(k, 1)[0];
     if (!mayEmoji(i)) continue; // the box was unticked while it waited
     const route = ROUTES[i.type];
     const handler = route && c.handlers[route[0]];
@@ -1433,9 +1440,12 @@ function buildAids(fold: HTMLElement, list: HTMLElement) {
     for (const k of ["ofbot.chat.key", "ofbot.chat.muted", "ofbot.box.chat"]) localStorage.removeItem(k);
   } catch {}
   const boxes: HTMLInputElement[] = [];
+  // Never switched on by "All" (only by its own box); "All" off still stops it.
+  const notByAll = new Set(["troll"]);
+  const byAll = aids.filter((a) => !notByAll.has(a.key));
   // "All" switch: turns every aid on or off at once; on only while all are on.
   const allLabel = document.createElement("label");
-  allLabel.title = "Turn every play aid on or off at once";
+  allLabel.title = "Turn every play aid on or off at once (on leaves Troll chat off)";
   allLabel.style.fontWeight = "700";
   const all = document.createElement("input");
   all.type = "checkbox";
@@ -1445,7 +1455,7 @@ function buildAids(fold: HTMLElement, list: HTMLElement) {
   all.onchange = () => {
     const on = all.checked; // each box's onchange re-sets `all` via show()
     for (const [i, b] of boxes.entries()) {
-      if (b.checked === on) continue;
+      if (b.checked === on || (on && notByAll.has(aids[i].key))) continue;
       b.checked = on;
       b.onchange!(new Event("change"));
     }
@@ -1453,7 +1463,7 @@ function buildAids(fold: HTMLElement, list: HTMLElement) {
   const show = () => {
     list.style.display = settings.aidsOpen ? "" : "none";
     const n = aids.filter((a) => settings.aids![a.key] ?? a.def).length;
-    all.checked = aids.every((a) => settings.aids![a.key] ?? a.def);
+    all.checked = byAll.every((a) => settings.aids![a.key] ?? a.def);
     fold.innerHTML = `Play aids${n ? ` (${n} on)` : ""} <span style="font-size:1.7em;line-height:0;vertical-align:-0.1em">${settings.aidsOpen ? "▾" : "▸"}</span>`;
   };
   for (const a of aids) {

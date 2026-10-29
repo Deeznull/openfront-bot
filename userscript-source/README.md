@@ -45,7 +45,8 @@ Tampermonkey's **Dashboard → Utilities → Import from file**.
    - **Play aids ▸** unfolds a list of optional helpers for your own play,
      all off by default. They work with the bot on or off. Each box they
      open can be dragged by its header and folded with –. The **All** switch
-     turns every aid on or off at once.
+     turns every aid on or off at once; switching it on leaves Troll chat
+     off (tick that one by itself).
      - **Hold-key macros**: hold X and left-click the map to launch as many
        Atom Bombs as the gold pays for (max 50, the game's limit per
        intent); hold Z / V / H and click to build a Port / SAM Launcher /
@@ -70,6 +71,11 @@ Tampermonkey's **Dashboard → Utilities → Import from file**.
        are rate-limited. Off when the lobby anonymizes names. ofstats sends
        no CORS headers, so the requests go through the script manager's
        `GM_xmlhttpRequest` (see below).
+     - **Troll chat**: sends the game's "[P1] is cheating!" quick chat, with
+       your own name as [P1], to every other human player in turn, as often
+       as the game allows (each player at most every 3 s, about 100 a
+       minute in all). It waits while the bot needs the send budget for
+       moves.
      - The overlays from `vendor/openfront-helper` (one checkbox each; the
        list is in that folder's README).
      - The script asks for `@grant GM_xmlhttpRequest` and `@connect
