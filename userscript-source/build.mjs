@@ -177,8 +177,7 @@ const loader = `
 
 const out =
   header +
-  "\n/* Includes code adapted from devdanetra/openfront-pro (MIT, (c) 2026 devdanetra) and\n" +
-  "   @noble/curves + @noble/hashes (MIT, (c) Paul Miller); see NOTICE in the source repository. */\n" +
+  "\n/* Includes code adapted from devdanetra/openfront-pro (MIT, (c) 2026 devdanetra); see NOTICE in the source repository. */\n" +
   "\nfunction __ofbotPage() {\n" +
   'document.dispatchEvent(new CustomEvent("ofbot:page-ran"));\n' +
   "\n/* Shadow engine (game engine + bot), started in a Worker from this function's source. */\n" +

@@ -4,7 +4,6 @@
  * it lists its toggles on window.__ofbotHelper).
  */
 import type { Aid, AidApi } from "./core";
-import { chatAid } from "./chat";
 import { macros } from "./macros";
 import { ranksAid } from "./ranks";
 import { trailsAid } from "./trails";
@@ -13,7 +12,7 @@ import { troopsAid } from "./troops";
 export type { Aid, AidApi, Intent } from "./core";
 
 export function allAids(): Aid[] {
-  const out: Aid[] = [macros, troopsAid, trailsAid, ranksAid, chatAid];
+  const out: Aid[] = [macros, troopsAid, trailsAid, ranksAid];
   const helper = (window as any).__ofbotHelper?.features ?? [];
   for (const f of helper) {
     if (!f || typeof f.key !== "string" || typeof f.set !== "function") continue;

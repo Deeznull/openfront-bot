@@ -45,8 +45,7 @@ Tampermonkey's **Dashboard → Utilities → Import from file**.
    - **Play aids ▸** unfolds a list of optional helpers for your own play,
      all off by default. They work with the bot on or off. Each box they
      open can be dragged by its header and folded with –. The **All** switch
-     turns every aid on or off at once; switching it on leaves Script chat
-     off (tick that one by itself).
+     turns every aid on or off at once.
      - **Hold-key macros**: hold X and left-click the map to launch as many
        Atom Bombs as the gold pays for (max 50, the game's limit per
        intent); hold Z / V / H and click to build a Port / SAM Launcher /
@@ -71,11 +70,6 @@ Tampermonkey's **Dashboard → Utilities → Import from file**.
        are rate-limited. Off when the lobby anonymizes names. ofstats sends
        no CORS headers, so the requests go through the script manager's
        `GM_xmlhttpRequest` (see below).
-     - **Script chat (Nostr)**: a chat box for players of this script in the
-       same game. Messages are signed and sent to public Nostr relays
-       (primal, nos.lol, nostr.mom, snort), which see your IP. Paused while
-       you are alive in a free-for-all game. A fresh key per game is kept in
-       `localStorage`; senders can be muted, floods are muted for a minute.
      - The overlays from `vendor/openfront-helper` (one checkbox each; the
        list is in that folder's README).
      - The script asks for `@grant GM_xmlhttpRequest` and `@connect
@@ -273,7 +267,7 @@ then http://localhost:9000), install the script, and start a Singleplayer game.
 | `src/feed.ts` | Reads hashes and the per-tick update the mirror needs, tolerant of format changes |
 | `src/shadow-entry.ts` | Worker or page entry point for the shadow bundle |
 | `src/engine-main.ts`, `src/engine-v34.ts` | One engine API for both repository layouts (picked by `build.mjs`) |
-| `src/aids/` | Play aids: hold-key macros, troop timing + donation box, solid boat trails (WebGL trail-shader hook), ofstats rank badges, Nostr chat (`vendor/nostr-crypto.js` from openfront-pro), the panel list |
+| `src/aids/` | Play aids: hold-key macros, troop timing + donation box, solid boat trails (WebGL trail-shader hook), ofstats rank badges, the panel list |
 | `vendor/openfront-helper/` | Overlays from openfront-helper-userscript (AGPL-3.0-or-later), a plain script put before the bundle |
 | `build.mjs` | esbuild bundle that writes the userscript (`--test` builds the test) |
 | `test/sim.ts` | Headless integration test |
