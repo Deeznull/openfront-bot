@@ -380,7 +380,7 @@ function onInit(w: Worker, realPost: GameCtx["realPost"], init: any) {
     stats: null,
     bus: null,
     handlers: null,
-    rec: allowed ? recNew(init, __OFBOT_VERSION__) : null,
+    rec: allowed && gameType !== "Singleplayer" ? recNew(init, __OFBOT_VERSION__) : null, // online games only
   };
   if (!allowed) {
     note(reason);
@@ -1238,7 +1238,7 @@ function buildUI() {
     <label><input type="checkbox" class="share"> Send/receive troops &amp; gold with them</label>
     <label title="Starts Easy solo games one after another, played by the bot at Max speed with turbo. Uncheck to stop."><input type="checkbox" class="farm"> Farm: Easy solo games on repeat</label>
     <label title="Farm: once the day's XP-paying solo games are used, join public FFA games (the bot plays; next lobby after it dies or the game ends)"><input type="checkbox" class="pub"> …then public FFA games</label>
-    <div class="of ex" title="Download a log of the games played in this browser (map, size, place, checkpoints), to study them with their replays"></div>
+    <div class="of ex" title="Download a log of the online games played in this browser (map, size, place, checkpoints; solo games are not logged), to study them with their replays"></div>
     </div>
     <div class="of af" style="font-weight:700" title="Optional helpers for your own play; they work with the bot on or off"></div>
     <div class="o ad"></div>

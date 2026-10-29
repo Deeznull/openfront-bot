@@ -1,5 +1,5 @@
 /**
- * Game records: one per game the bot plays, so lost online games can be
+ * Game records: one per online game the bot plays (solo games are not kept), so lost online games can be
  * studied afterwards next to their replay (the game ID fetches it). Kept in
  * localStorage (newest last) and written to the console as one
  * `[ofbot-rec] {json}` line when the game is left, for a headless runner.
@@ -46,7 +46,8 @@ export function recNew(init: any, version: string): GameRec {
 export function recAll(): GameRec[] {
   try {
     const a = JSON.parse(localStorage.getItem(KEY) ?? "[]");
-    return Array.isArray(a) ? a : [];
+    // Solo games kept by scripts before 0.7.2.2 are dropped.
+    return Array.isArray(a) ? a.filter((x) => x && x.type !== "Singleplayer") : [];
   } catch {
     return [];
   }
