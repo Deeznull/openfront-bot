@@ -25,8 +25,8 @@ This repository does not include the game's source code. The game can be downloa
 3. Open the game website, start or join a game (any mode) and press **Start bot** in the panel at the top right.
 
 - **Modes:** the general mode plays online games. Solo games on Easy switch to a farm mode by themselves.
-- **Farm option:** plays the 5 Easy solo games per UTC day that give XP, at Max speed, each held until 30+ game minutes for the most XP. Then it joins public FFA games; untick **…then public FFA games** to stop after the solo games.
-- **How to farm XP fast:** open the game in several tabs of the same browser (5 to 10 tabs work), start the bot in each, and tick **Farm: Easy solo games on repeat** and **…then public FFA games**. One tab plays the daily solo games, and every tab joins a different public FFA game, so the bot keeps farming games on its own. This can get an account to level 100 in about a day.
+- **Farm option** (the **Farm** list): **XP** plays the 5 Easy solo games per UTC day that give XP, at Max speed, each held until 30+ game minutes for the most XP, then joins public FFA games. **Easy solo only** stops after the solo games, and **Public FFA only** skips them and joins public FFA games one after another.
+- **How to farm XP fast:** open the game in several tabs of the same browser (5 to 10 tabs work), start the bot in each, and set **Farm** to **XP: Easy solo, then public FFA**. One tab plays the daily solo games, and every tab joins a different public FFA game, so the bot keeps farming games on its own. This can get an account to level 100 in about a day.
 - **Panel:** **–/+** folds the panel; **Options** hides the checkboxes.
 - **Play aids** 20+ Quality of Life features
   

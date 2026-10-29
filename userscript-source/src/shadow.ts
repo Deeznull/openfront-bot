@@ -334,7 +334,11 @@ export function createShadow(post: Post, onPage = false) {
 
   // Game record (page.ts keeps it): a checkpoint every 30 s, and one at our
   // death with the attackers that were on us then, so a lost game can be
-  // studied later next to its replay.
+  // studied later next to its replay. Players carry their replay IDs (id,
+  // clientID) next to their names.
+  // Buildings counted in each checkpoint (UnitType values; plain strings so the
+  // older engine build compiles too).
+  const REC_UNITS = ["City", "Port", "Factory", "Missile Silo", "SAM Launcher", "Defense Post", "Warship"] as any[];
   let recAlive = false;
   let recIncoming: any[] = [];
   function recStep(g: Game) {
@@ -349,7 +353,7 @@ export function createShadow(post: Post, onPage = false) {
       const inc = new Map<string, any>();
       for (const a of me.incomingAttacks()) {
         const p: any = a.attacker();
-        const e = inc.get(p.id()) ?? { name: p.displayName(), type: p.type(), troops: 0 };
+        const e = inc.get(p.id()) ?? { ...recWho(p), troops: 0 };
         e.troops += Math.round(a.troops());
         inc.set(p.id(), e);
       }
@@ -360,6 +364,19 @@ export function createShadow(post: Post, onPage = false) {
     live.sort((a, b) => b.numTilesOwned() - a.numTilesOwned());
     const land = Math.max(1, (g as any).numLandTiles());
     const top: any = live[0];
+    const out = new Map<string, any>();
+    for (const a of alive ? me.outgoingAttacks() : []) {
+      const p: any = a.target();
+      const k = p.isPlayer?.() ? p.id() : "land";
+      const e = out.get(k) ?? { ...(p.isPlayer?.() ? recWho(p) : { name: "unowned land" }), troops: 0 };
+      e.troops += Math.round(a.troops());
+      out.set(k, e);
+    }
+    const units: Record<string, number> = {};
+    for (const u of REC_UNITS) {
+      const n = me.units(u).length;
+      if (n) units[u] = n;
+    }
     post({
       t: "rec",
       cp: {
@@ -370,12 +387,20 @@ export function createShadow(post: Post, onPage = false) {
         rank: alive ? live.indexOf(me) + 1 : live.length + 1,
         left: live.length,
         troops: Math.round(me.troops()),
+        maxTroops: Math.round(g.config().maxTroops(me)),
         gold: Number(me.gold()),
-        allies: me.allies().length,
-        top: top ? { name: top.displayName(), type: top.type(), share: +(top.numTilesOwned() / land).toFixed(4) } : null,
+        units,
+        allies: me.allies().map((p: any) => recWho(p)),
+        top: top ? { ...recWho(top), share: +(top.numTilesOwned() / land).toFixed(4) } : null,
         incoming: recIncoming,
+        outgoing: [...out.values()].sort((a, b) => b.troops - a.troops).slice(0, 3),
+        mirv: (bot as any)?.mirvSaving?.name?.() ?? null, // the bot saving gold for a MIRV on them
       },
     });
+  }
+
+  function recWho(p: any) {
+    return { name: p.displayName(), type: p.type(), id: p.id(), cid: p.clientID?.() ?? null };
   }
 
   function botStep(g: Game) {

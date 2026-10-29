@@ -25,11 +25,20 @@ Tampermonkey's **Dashboard → Utilities → Import from file**.
      reads "Start bot (next game)" and arms the bot for the next game.
    - **Auto-start in each game** keeps the bot on for every allowed game.
    - **Bot may send emojis** is off by default.
-   - **Farm: Easy solo games on repeat** (off by default): from the homepage it
-     starts an Easy solo game, the bot plays it at Max speed with turbo (the
-     next turn starts as soon as the last one is done, also in a background
-     tab), and after the game ends it goes home and starts the next one. The
-     panel counts the games.
+   - **Farm** (off by default) plays game after game. With **Easy solo only**,
+     from the homepage it starts an Easy solo game, the bot plays it at Max
+     speed with turbo (the next turn starts as soon as the last one is done,
+     also in a background tab), and after the game ends it goes home and
+     starts the next one. **XP: Easy solo, then public FFA** plays the day's
+     XP-paying solo games that way, then public FFA games. **Public FFA only**
+     joins public FFA lobbies one after another (the next one after the bot
+     dies or the game ends). The panel counts the games.
+   - **Export game log** downloads a record of each online game played in
+     this browser, then clears the log. A record holds the game and replay
+     IDs, our player in the replay, the ticks the bot was on, the moves it
+     sent, sync problems and errors, the place, and a checkpoint every 30 s
+     (land, troops, gold, buildings, allies, who attacked us and whom we
+     attacked, with their replay IDs).
    - The panel can be dragged and collapsed. Its settings are saved in
      `localStorage`.
    - **Play aids ▸** unfolds a list of optional helpers for your own play,

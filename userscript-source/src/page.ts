@@ -16,7 +16,7 @@ import { GameUpdateType } from "ofenums";
 import { type FeedEntry, feedEntry, feedTransfers, findHashes } from "./feed";
 import { FARM_TWEAKS } from "./farm-params";
 import { FfaClaims, holdLock, JOIN_WAIT_MS, joinable, LockClaims, SKIP_MS } from "./ffa-claim";
-import { type GameRec, recAll, recExport, recFinish, recNew, recSave } from "./rec";
+import { type GameRec, recAll, recBot, recCount, recError, recExport, recFinish, recNew, recSave } from "./rec";
 import { type Aid, type AidApi, allAids, setAid } from "./aids";
 
 declare function __ofbotShadowMain(): void;
@@ -38,7 +38,7 @@ interface Settings {
   farm: boolean; // also turbo: Max speed, next turn as soon as the last is done
   farmGames: number;
   farmPublic: boolean; // farm: public FFA games once the day's XP solo games are used
-  farmSolo?: boolean; // false: the farm skips solo games (no panel option; headless recorder)
+  farmSolo?: boolean; // false: the farm skips solo games (panel: Public FFA only; headless recorder)
   min: boolean; // panel collapsed to its header
   opts: boolean; // options (checkboxes) folded away
   aids?: Record<string, boolean>; // play aids on/off by key (src/aids)
@@ -327,6 +327,11 @@ function hook(w: Worker) {
   });
 }
 
+/** Keys of the play aids that are on (all default to off). */
+function aidsOn(): string[] {
+  return Object.keys(settings.aids ?? {}).filter((k) => settings.aids![k]);
+}
+
 function disposeCtx(reason: string) {
   if (!ctx) return;
   if (ctx.rec) recFinish(ctx.rec);
@@ -380,14 +385,15 @@ function onInit(w: Worker, realPost: GameCtx["realPost"], init: any) {
     stats: null,
     bus: null,
     handlers: null,
-    rec: allowed && gameType !== "Singleplayer" ? recNew(init, __OFBOT_VERSION__) : null, // online games only
+    rec: allowed && gameType !== "Singleplayer" ? recNew(init, __OFBOT_VERSION__, aidsOn()) : null, // online games only
   };
   if (!allowed) {
     note(reason);
     return;
   }
-  if (settings.autoStart || (settings.farm && (gameType === "Singleplayer" || (gameType === "Public" && settings.farmPublic))))
+  if (settings.autoStart || (settings.farm && farmPlays(gameType)))
     botOn = true;
+  if (ctx.rec && botOn) recBot(ctx.rec, true, 0);
   startShadow(ctx, false);
   note(`${gameType} game detected — starting shadow engine`);
 }
@@ -529,10 +535,12 @@ function desync(c: GameCtx, tick: number) {
   c.desyncTimes = c.desyncTimes.filter((t) => now - t < 180_000);
   c.desyncTimes.push(now);
   c.queue.length = 0;
+  if (c.rec) c.rec.sync.desyncs++;
   if (!c.canSnapshot) {
     // No snapshot to resync from: keep playing, with the shadow following the
     // real game's own updates. Hashes can't confirm sync any more.
     c.mirror = true;
+    if (c.rec) c.rec.sync.mirror = true;
     c.shadow?.post({ t: "mirror", on: true });
     note(`shadow diverged from the game at tick ${tick} (newer game version?) — mirror mode: following the game's updates`);
     return;
@@ -558,6 +566,10 @@ function onShadowMessage(c: GameCtx, m: any) {
       c.shadowReady = true;
       c.myID = m.myID;
       c.canSnapshot = !!m.canSnapshot;
+      if (c.rec) {
+        c.rec.me.playerID ??= m.myID ?? null;
+        if (m.resync) c.rec.sync.resyncs++;
+      }
       // The shadow holds its own map copy and turn buffer now; free ours.
       c.turns.length = 0;
       c.real.length = 0;
@@ -592,7 +604,6 @@ function onShadowMessage(c: GameCtx, m: any) {
     case "rec":
       if (!c.rec) break;
       c.rec.cps.push(m.cp);
-      c.rec.botOn ||= botOn;
       if (m.cp.died) c.rec.died = m.cp.tick;
       if (m.cp.died || c.rec.cps.length % 10 === 1) recSave(c.rec);
       break;
@@ -604,6 +615,10 @@ function onShadowMessage(c: GameCtx, m: any) {
     case "lost":
       c.lost = true;
       c.queue.length = 0;
+      if (c.rec) {
+        c.rec.sync.lost = true;
+        recError(c.rec, m.msg);
+      }
       note(`game version changed too much — rebuild needed (${m.msg}). Bot stopped.`);
       setBot(false);
       break;
@@ -612,6 +627,7 @@ function onShadowMessage(c: GameCtx, m: any) {
       break;
     case "error":
       console.warn("[ofbot]", m.msg);
+      if (c.rec) recError(c.rec, m.msg);
       lastMsg = m.msg.split("\n")[0];
       render();
       break;
@@ -730,6 +746,7 @@ function pump() {
   const gone: Intent[] = [];
   c.queue = c.queue.filter((q) => now - q.at < 2500 || (gone.push(q.i), false));
   c.dropped += gone.length;
+  if (c.rec) c.rec.bot.dropped += gone.length;
   while (c.queue.length && canSend(c)) {
     if (!c.handlers || !c.bus) {
       c.bus = findBus();
@@ -747,12 +764,14 @@ function pump() {
     const handler = route && c.handlers[route[0]];
     if (!handler) {
       c.dropped++;
+      if (c.rec) c.rec.bot.dropped++;
       gone.push(i);
       continue;
     }
     try {
       handler(route[1](i));
       c.sent++;
+      if (c.rec) recCount(c.rec.bot.sent, i.type);
       if (c.gameType !== "Singleplayer") {
         bucket.sec++;
         bucket.min.push(now);
@@ -760,6 +779,7 @@ function pump() {
     } catch (e) {
       console.warn("[ofbot] send failed", i, e);
       c.dropped++;
+      if (c.rec) c.rec.bot.dropped++;
       gone.push(i);
       c.bus = c.handlers = null; // rediscover (new game / new bus)
       break;
@@ -792,6 +812,7 @@ function pumpAids() {
     if (!handler) continue;
     try {
       handler(route[1](i));
+      if (c.rec) recCount(c.rec.aidSent, i.type);
       if (c.gameType !== "Singleplayer") {
         bucket.sec++;
         bucket.min.push(now);
@@ -835,6 +856,7 @@ function pushEnable() {
 
 function setBot(on: boolean) {
   botOn = on;
+  if (ctx?.rec) recBot(ctx.rec, on, ctx.realTick);
   if (!on && ctx) ctx.queue.length = 0;
   pushEnable();
   render();
@@ -950,6 +972,34 @@ function farmLeave() {
   location.assign(`${location.origin}/`);
 }
 
+/** The farm mode in the panel's Farm list, from the settings it sets. */
+type FarmMode = "off" | "xp" | "solo" | "ffa";
+function farmMode(): FarmMode {
+  if (!settings.farm) return "off";
+  if (settings.farmSolo === false) return "ffa";
+  return settings.farmPublic ? "xp" : "solo";
+}
+function setFarmMode(m: FarmMode) {
+  settings.farm = m !== "off";
+  if (m !== "off") {
+    settings.farmPublic = m !== "solo";
+    settings.farmSolo = m !== "ffa";
+  }
+  saveSettings();
+}
+const FARM_NOTES: Record<FarmMode, string> = {
+  off: "Farm off",
+  xp: "Farm on: the day's XP Easy solo games, then public FFA games",
+  solo: "Farm on: Easy solo games on repeat",
+  ffa: "Farm on: public FFA games on repeat",
+};
+
+/** Whether the farm plays a game of this type (the bot starts in it). */
+function farmPlays(gameType: string): boolean {
+  if (gameType === "Singleplayer") return settings.farmSolo !== false;
+  return gameType === "Public" && settings.farmPublic;
+}
+
 function farmTick() {
   if (!settings.farm) {
     farmStartAt = 0;
@@ -1003,7 +1053,7 @@ function farmTick() {
   }
   farmAwayAt = 0;
   if (c.allowed && c.gameType === "Public" && settings.farmPublic) return farmPublicTick(c, now);
-  if (!c.allowed || c.gameType !== "Singleplayer") return;
+  if (!c.allowed || c.gameType !== "Singleplayer" || !farmPlays(c.gameType)) return;
   if (farmGameAt === 0) farmGameAt = now;
   if (c.shadowReady) farmSpeedUp();
   const wm = document.querySelector("win-modal") as any;
@@ -1039,7 +1089,15 @@ setInterval(() => {
   if (!r || r.end) return;
   const wm = document.querySelector("win-modal") as any;
   if (!wm?.isVisible) return;
-  r.end = { tick: ctx!.realTick, title: String(wm._title ?? ""), alive: r.died === null };
+  const last = r.cps.at(-1);
+  r.end = {
+    tick: ctx!.realTick,
+    title: String(wm._title ?? ""),
+    alive: r.died === null,
+    place: last?.rank ?? null, // a death checkpoint ranks us after everyone alive
+    of: last ? last.left + (r.died === null ? 0 : 1) : null,
+  };
+  recBot(r, false, ctx!.realTick);
   recSave(r);
   render();
 }, 1000);
@@ -1195,8 +1253,7 @@ let ui: {
   emo: HTMLInputElement;
   team: HTMLInputElement;
   share: HTMLInputElement;
-  farm: HTMLInputElement;
-  pub: HTMLInputElement;
+  farm: HTMLSelectElement;
 } | null = null;
 
 function buildUI() {
@@ -1220,6 +1277,7 @@ function buildUI() {
   .s{color:#93c5fd}.m{color:#9ca3af;word-break:break-word;max-height:48px;overflow:hidden}
   .x{cursor:pointer;color:#9ca3af;font-weight:400}
   .of{cursor:pointer;color:#9ca3af;user-select:none}.o{display:grid;gap:5px}
+  select{background:#111827;color:inherit;border:1px solid #374151;border-radius:4px;font:inherit;padding:1px 2px}
   .sw{appearance:none;flex:none;width:30px;height:16px;margin:0;border-radius:8px;background:#4b5563;position:relative;cursor:pointer;transition:background .15s}
   .sw::after{content:"";position:absolute;top:2px;left:2px;width:12px;height:12px;border-radius:50%;background:#fff;transition:left .15s}
   .sw:checked{background:#16a34a}.sw:checked::after{left:16px}
@@ -1236,8 +1294,12 @@ function buildUI() {
     <label><input type="checkbox" class="emo"> Bot may send emojis</label>
     <label><input type="checkbox" class="team"> Team up with other script bots</label>
     <label><input type="checkbox" class="share"> Send/receive troops &amp; gold with them</label>
-    <label title="Starts Easy solo games one after another, played by the bot at Max speed with turbo. Uncheck to stop."><input type="checkbox" class="farm"> Farm: Easy solo games on repeat</label>
-    <label title="Farm: once the day's XP-paying solo games are used, join public FFA games (the bot plays; next lobby after it dies or the game ends)"><input type="checkbox" class="pub"> …then public FFA games</label>
+    <label title="The bot plays game after game. XP: the day's XP-paying Easy solo games (Max speed, turbo), then public FFA games. Public FFA: the next lobby after it dies or the game ends. Off stops it.">Farm <select class="farm">
+      <option value="off">off</option>
+      <option value="xp">XP: Easy solo, then public FFA</option>
+      <option value="solo">Easy solo only</option>
+      <option value="ffa">Public FFA only</option>
+    </select></label>
     <div class="of ex" title="Download a log of the online games played in this browser (map, size, place, checkpoints; solo games are not logged), to study them with their replays"></div>
     </div>
     <div class="of af" style="font-weight:700" title="Optional helpers for your own play; they work with the bot on or off"></div>
@@ -1259,7 +1321,6 @@ function buildUI() {
     team: q(".team"),
     share: q(".share"),
     farm: q(".farm"),
-    pub: q(".pub"),
   };
   ui.team.checked = settings.team;
   ui.share.checked = settings.share;
@@ -1273,20 +1334,18 @@ function buildUI() {
     saveSettings();
     pushEnable();
   };
-  ui.farm.checked = settings.farm;
+  ui.farm.value = farmMode();
   ui.farm.onchange = () => {
-    settings.farm = ui!.farm.checked;
-    saveSettings();
-    note(settings.farm ? "Farm on: Easy solo games on repeat" : "Farm off");
-  };
-  ui.pub.checked = settings.farmPublic;
-  ui.pub.onchange = () => {
-    settings.farmPublic = ui!.pub.checked;
-    saveSettings();
+    const m = ui!.farm.value as FarmMode;
+    setFarmMode(m);
+    note(FARM_NOTES[m]);
   };
   const ex = q<HTMLElement>(".ex");
   ex.textContent = "Export game log";
-  ex.onclick = () => recExport();
+  ex.onclick = () => {
+    const n = recExport(ctx?.rec && !ctx.rec.left ? ctx.rec.id : null);
+    note(n ? `Exported ${n} online game${n === 1 ? "" : "s"}; the log is cleared` : "No finished online games to export");
+  };
   ex.onpointerenter = () => (ex.textContent = `Export game log (${recAll().length} games)`);
   ui.auto.checked = settings.autoStart;
   ui.emo.checked = settings.emojis;
