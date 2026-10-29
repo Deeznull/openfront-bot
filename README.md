@@ -28,18 +28,9 @@ This repository does not include the game's source code. The game can be downloa
 - **Farm option:** plays the 5 Easy solo games per UTC day that give XP, at Max speed, each held until 30+ game minutes for the most XP. Then it joins public FFA games; untick **…then public FFA games** to stop after the solo games.
 - **How to farm XP fast:** open the game in several tabs of the same browser (5 to 10 tabs work), start the bot in each, and tick **Farm: Easy solo games on repeat** and **…then public FFA games**. One tab plays the daily solo games, and every tab joins a different public FFA game, so the bot keeps farming games on its own. This can get an account to level 100 in about a day.
 - **Panel:** **–/+** folds the panel; **Options** hides the checkboxes.
-- **Play aids** (all off by default, each with its own checkbox; they work with the bot on or off, for your own play). The **All** switch turns them all on or off; on leaves Nostr chat off.
-  - Hold-key macros: hold **X** and left-click the map to launch as many Atom Bombs as your gold pays for (max 50); hold **Z** / **V** / **H** and click to build a Port / SAM / Missile Silo, or upgrade yours there by up to 50 levels.
-  - Troop timing + safe donation: your troops against the cap, where growth is fastest, when to wait or attack, and how much you can donate keeping a 35% reserve.
-  - Solid boat trails: the game's own transport-boat trails are drawn fully opaque (nuke trails unchanged).
-  - Overlays and panels from [openfront-helper-userscript](https://github.com/nguyenvancaokyfpt/openfront-helper-userscript): nuke landing and trajectory, boat target marks (a see-through target symbol where each transport boat will land: yours blue, allies green, others red), map gold and troops above each name (gold gray if it can't buy a Hydrogen Bomb, yellow if it can, bold gold if it can buy a MIRV; troops current/max colored against yours), bot nation dots (green for allies), incoming attacks, build timers, team buildings, an estates panel, and more (see `userscript-source/README.md`).
-  - Anti-AFK: keeps the tab from being marked idle.
-  - Moves sent for you (they share the bot's rate limit): auto-donate troops or gold to a teammate, and auto-defend (send troops to a teammate under attack).
-  - Auto-leave: goes back to the lobby once you or your team has won.
-  - Rank badges next to player names. They come from [ofstats.io](https://ofstats.io), so player names are sent to that site while it is on.
-  - Nostr chat: an in-game chat between players with the script, over public Nostr relays (anyone can read it).
-
-The script is made for game version v0.35.6 (since script 0.7; 0.6.3.9-0.6.4.0 were made for v0.35.4, 0.6.1-0.6.3.8 were made for v0.35.2, 0.6.0 for v0.35.0; older 0.5.x scripts were made for v0.34.24 and don't work on v0.35). On newer versions it keeps playing by following the live game, until a version changes too much; then it must be rebuilt (see `userscript-source/README.md`). Installed copies update themselves when a rebuilt script is pushed here.
+- **Play aids** 20+ Quality of Life features
+  
+On newer versions it keeps playing by following the live game, until a version changes too much; then it must be rebuilt (see `userscript-source/README.md`). Installed copies update themselves when a rebuilt script is pushed here.
 
 ## 2. Training
 ### Setup
