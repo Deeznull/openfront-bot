@@ -24,7 +24,8 @@ Tampermonkey's **Dashboard → Utilities → Import from file**.
    - **Start bot** turns it on for the current game. Before a game, the button
      reads "Start bot (next game)" and arms the bot for the next game.
    - **Auto-start in each game** keeps the bot on for every allowed game.
-   - **Bot may send emojis** is off by default.
+   - **Bot may send emojis** is off by default. It covers every emoji the
+     script sends, the Auto-defend (SOS) play aid's included.
    - **Farm** (off by default) plays game after game. With **Easy solo only**,
      from the homepage it starts an Easy solo game, the bot plays it at Max
      speed with turbo (the next turn starts as soon as the last one is done,

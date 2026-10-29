@@ -201,7 +201,7 @@ window.__ofbotHelper = {
       key: "sos",
       label: "Auto-defend (SOS)",
       title:
-        "When someone attacks you: an SOS emoji to your allies/teammates (every 12 s) and a target mark on each attacker (every 16 s per attacker).",
+        "When someone attacks you: an SOS emoji to your allies/teammates (every 12 s; only with Bot may send emojis ticked) and a target mark on each attacker (every 16 s per attacker).",
       set(on) {
         _ofbotHelperSafe("sos", () => setSosDefenseEnabled(on));
       },

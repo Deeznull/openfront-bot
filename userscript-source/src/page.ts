@@ -701,7 +701,13 @@ function handlersOf(bus: any): Record<string, (e: any) => void> {
   return out;
 }
 
+/** Whether an intent may go out: emojis only with the "Bot may send emojis" box ticked. */
+function mayEmoji(i: Intent): boolean {
+  return i.type !== "emoji" || settings.emojis;
+}
+
 function enqueue(c: GameCtx, i: Intent) {
+  if (!mayEmoji(i)) return;
   const key = JSON.stringify(i);
   if (c.queue.some((q) => q.key === key)) return;
   // A spawn replaces any spawn still waiting.
@@ -807,6 +813,7 @@ function pumpAids() {
       if (!c.handlers) return;
     }
     const { i } = aidQueue.shift()!;
+    if (!mayEmoji(i)) continue; // the box was unticked while it waited
     const route = ROUTES[i.type];
     const handler = route && c.handlers[route[0]];
     if (!handler) continue;
@@ -831,7 +838,7 @@ setInterval(() => {
 
 const aidApi: AidApi = {
   send(i) {
-    if (!ctx?.allowed) return false;
+    if (!ctx?.allowed || !mayEmoji(i)) return false;
     aidQueue.push({ i, at: performance.now() });
     pumpAids();
     return true;
@@ -1291,7 +1298,7 @@ function buildUI() {
     <div class="of" title="Show/hide the options"></div>
     <div class="o">
     <label><input type="checkbox" class="auto"> Auto-start in each game</label>
-    <label><input type="checkbox" class="emo"> Bot may send emojis</label>
+    <label title="Covers every emoji the script sends: the bot's and the Auto-defend (SOS) play aid's"><input type="checkbox" class="emo"> Bot may send emojis</label>
     <label><input type="checkbox" class="team"> Team up with other script bots</label>
     <label><input type="checkbox" class="share"> Send/receive troops &amp; gold with them</label>
     <label title="The bot plays game after game. XP: the day's XP-paying Easy solo games (Max speed, turbo), then public FFA games. Public FFA: the next lobby after it dies or the game ends. Off stops it.">Farm <select class="farm">
@@ -1357,6 +1364,7 @@ function buildUI() {
   ui.emo.onchange = () => {
     settings.emojis = ui!.emo.checked;
     saveSettings();
+    if (!settings.emojis && ctx) ctx.queue = ctx.queue.filter((q) => mayEmoji(q.i));
     pushEnable();
   };
   // Collapse the whole body from the header (–/+), or fold away only the
