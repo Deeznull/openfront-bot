@@ -30,7 +30,7 @@ This repository does not include the game's source code. The game can be downloa
 - **Panel:** **–/+** folds the panel; **Options** hides the checkboxes.
 - **Play aids** 20+ Quality of Life features
   
--  On newer versions it keeps playing by following the live game, until a version changes too much; then it must be rebuilt (see `userscript-source/README.md`). Installed copies update themselves when a rebuilt script is pushed here.
+On newer versions it keeps playing by following the live game, until a version changes too much; then it must be rebuilt (see `userscript-source/README.md`). Installed copies update themselves when a rebuilt script is pushed here.
 
 ## 2. Training
 ### Setup
