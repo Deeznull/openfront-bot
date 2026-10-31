@@ -83,6 +83,29 @@ if (process.argv.includes('--test')) {
 const shadow = await esbuild.build({ ...common, entryPoints: [path.join(here, "src/shadow-entry.ts")] });
 const page = await esbuild.build({ ...common, entryPoints: [path.join(here, "src/page.ts")] });
 
+// The engine sources must come from the repo this build was told to use. The
+// checkouts share one node_modules (v0356's is a junction to v0354's), so the
+// @openfront links inside it decide which tree esbuild reads, and every build
+// silently bundled v0354's BotExecution.ts under a v0.35.6 header until
+// 2026-10-31. Fail loudly instead of shipping an engine nobody re-tested.
+if (kind === "main") {
+  const pkgRoot = path.join(repo, "packages", "engine") + path.sep;
+  let resolved = "";
+  try {
+    resolved = fs.realpathSync(require.resolve("@openfront/engine/execution/bot/BotExecution", { paths: [repo] }));
+  } catch (e) {
+    resolved = `(cannot resolve: ${e?.message ?? e})`;
+  }
+  if (!resolved.startsWith(fs.realpathSync(path.join(repo, "packages", "engine")) + path.sep)) {
+    console.error(
+      `build: @openfront/engine resolves outside ${pkgRoot}\n  got: ${resolved}\n` +
+        "  The node_modules links point at another checkout. Repoint them, e.g. on Windows:\n" +
+        `  New-Item -ItemType Junction -Path "<repo>\\node_modules\\@openfront\\engine" -Target "<repo>\\packages\\engine"`,
+    );
+    process.exit(1);
+  }
+}
+
 // One script per engine, each matching only the sites that run that engine:
 // the live build (v34, or a main-layout engine built with --live, e.g. the
 // site's v0.35 tag) is for the live site, the main build for the fork and the dev
