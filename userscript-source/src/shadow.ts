@@ -132,6 +132,10 @@ export function createShadow(post: Post, onPage = false) {
     warSnipe: 1,
     snipeBurst: 3,
     boatCounter: 1,
+    // owner 2026-10-31: skip boats a hostile warship can reach, but only on
+    // trips over 5 s (50 tiles); A/B al: +0.14 fit, sinkings 82 -> 20/game.
+    boatWarship: 20,
+    boatWarshipMin: 50,
     landPush: 1,
     navy: 1,
     factLink: 1,
