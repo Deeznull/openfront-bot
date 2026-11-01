@@ -8,6 +8,8 @@
  */
 const KEY = "ofbot.games.v1";
 const MAX = 120;
+const MAX_BOATS = 400; // per game
+const MAX_ALLY_EVENTS = 200;
 
 export interface GameRec {
   v: string; // script version
@@ -29,7 +31,15 @@ export interface GameRec {
   aids: string[]; // play aids on at the start
   aidSent: Record<string, number>; // moves the play aids sent (macros, auto-donate), by type
   sync: { desyncs: number; resyncs: number; mirror: boolean; lost: boolean; errors: string[] };
-  cps: any[]; // checkpoints from the shadow (shadow.ts recStep)
+  cps: any[]; // checkpoints from the shadow (shadow.ts recStep); the death one has last60
+  settings: { tick: number; set: Record<string, any> }[]; // the bot's settings: all at first, then what changed
+  // Our boats as they end: [launch tick, ticks at sea, tiles to target, troops,
+  // target (H/N/B or TN for unowned land), land / sunk / lost / retreat]
+  boats: (number | string)[][];
+  boatsMore: number; // boats past the cap
+  allies: { tick: number; ev: string; who: any; [k: string]: any }[]; // alliances made and ended (shadow.ts recAllyStep)
+  // Alliance asks by player: the bot asks ~6 times a minute, so counts with first and last tick.
+  asks: Record<string, { who: any; first: number; last: number; [ev: string]: any }>;
   died: number | null; // tick of our death
   // First win-modal sight; place is among the players alive (bots excluded).
   end: { tick: number; title: string; alive: boolean; place: number | null; of: number | null } | null;
@@ -58,6 +68,11 @@ export function recNew(init: any, version: string, aids: string[]): GameRec {
     aidSent: {},
     sync: { desyncs: 0, resyncs: 0, mirror: false, lost: false, errors: [] },
     cps: [],
+    settings: [],
+    boats: [],
+    boatsMore: 0,
+    allies: [],
+    asks: {},
     died: null,
     end: null,
     left: null,
@@ -81,6 +96,27 @@ export function recBot(r: GameRec, on: boolean, tick: number) {
   if (on && !open) r.bot.on.push([Math.max(0, tick), null]);
   if (!on && open) last![1] = Math.max(last![0], tick);
   r.botOn ||= on;
+}
+
+/** A "rec" message from the shadow: a checkpoint, settings, a boat or an alliance event. */
+export function recShadow(r: GameRec, m: any) {
+  if (m.cp) {
+    r.cps.push(m.cp);
+    if (m.cp.died) r.died = m.cp.tick;
+  }
+  if (m.settings) r.settings.push(m.settings);
+  if (m.boat) {
+    if (r.boats.length < MAX_BOATS) r.boats.push(m.boat);
+    else r.boatsMore++;
+  }
+  if (m.ally) {
+    const { tick, ev, who } = m.ally;
+    if (/asked|refused/.test(ev)) {
+      const e = (r.asks[who.id] ??= { who, first: tick, last: tick });
+      e.last = tick;
+      e[ev] = (e[ev] ?? 0) + 1;
+    } else if (r.allies.length < MAX_ALLY_EVENTS) r.allies.push(m.ally);
+  }
 }
 
 export function recCount(m: Record<string, number>, type: string) {

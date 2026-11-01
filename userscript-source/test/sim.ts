@@ -34,7 +34,9 @@ import {
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Worker } from "node:worker_threads";
+import { writeFileSync } from "node:fs";
 import { feedEntry, findHashes } from "../src/feed";
+import { recNew, recShadow } from "../src/rec";
 
 declare const __REPO__: string;
 
@@ -147,10 +149,12 @@ async function main() {
     console.error("shadow thread crashed:", e);
     process.exit(1);
   });
+  const rec = recNew({ gameStartInfo: gameStart, clientID: CLIENT }, "test", []); // the game log, as the page keeps it
   thread.on("message", (m: any) => {
     if (m.t === "done") acks++;
     else if (m.t === "ready") ready++;
     else if (m.t === "hash") shadowHashes.set(m.tick, m.hash);
+    else if (m.t === "rec") recShadow(rec, m);
     else if (m.t === "intents") {
       const due = curTick + LATENCY;
       const list = pending.get(due) ?? [];
@@ -399,8 +403,21 @@ async function main() {
   const synced = driftEvery
     ? mirrorAt >= 0 && (lost === 0 || !correct)
     : mismatches === 0 && compared > 0 && diverged === 0 && (CAN_SNAPSHOT || lastFeed === "ok") && preOwnedMin === 1;
+  // The game log: what the bot's real moves left in it. --recout <file> writes it out.
+  const tally = (l: any[], f: (x: any) => string) => l.reduce((a, x) => ({ ...a, [f(x)]: (a[f(x)] ?? 0) + 1 }), {} as Record<string, number>);
+  const deathCp = rec.cps.find((c) => c.died);
+  console.log(
+    `GAME LOG checkpoints ${rec.cps.length}, settings ${rec.settings.length} (${Object.keys(rec.settings[0]?.set ?? {}).length} keys), ` +
+      `boats ${JSON.stringify(tally(rec.boats, (b) => String(b[5])))}, skips ${rec.cps.at(-1)?.warshipSkips}, ` +
+      `allies ${JSON.stringify(tally(rec.allies, (a) => a.ev))}, asked ${Object.keys(rec.asks).length} players, last60 ${deathCp?.last60?.length ?? "no death"}, ` +
+      `json ${Math.round(JSON.stringify(rec).length / 1024)} KB`,
+  );
+  if (process.argv.includes("--recout")) writeFileSync(arg("recout", "rec.json"), JSON.stringify(rec, null, 1));
+  const recOk = rec.cps.length > 0 && (process.argv.includes("--nobot") || rec.settings.length > 0) &&
+    rec.cps.filter((c) => c.died).length === (me.isAlive() ? 0 : 1) && (!deathCp || deathCp.last60?.length > 0);
+  if (!recOk) console.log("GAME LOG FAIL");
   const ok = synced && me.numTilesOwned() > 0 && errors === 0 && realErrors === 0 && tribeDiplomacy === 0 &&
-    !counts.breakAlliance && !me.isTraitor() && !earlyWin;
+    !counts.breakAlliance && !me.isTraitor() && !earlyWin && recOk;
   console.log(ok ? "PASS" : "FAIL");
   process.exit(ok ? 0 : 1);
 }

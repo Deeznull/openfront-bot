@@ -345,13 +345,131 @@ export function createShadow(post: Post, onPage = false) {
   const REC_UNITS = ["City", "Port", "Factory", "Missile Silo", "SAM Launcher", "Defense Post", "Warship"] as any[];
   let recAlive = false;
   let recIncoming: any[] = [];
+  let recRecent: any[] = []; // a sample every 5 s of the last 60 s, sent at our death
+  let recSettings: Record<string, any> | null = null;
+  let recFailed = false;
+  let recMyBetrayals = 0;
+  const recBoats = new Map<number, any>(); // our boats at sea, by unit ID (IDs survive a resync)
+  const recAsks = new Map<string, any>(); // open alliance requests
+  const recAllies = new Map<string, any>(); // our alliances
+
+  /** Each boat when it ends: how long it sailed and whether it landed. */
+  function recBoatStep(g: Game, me: any) {
+    const t = g.ticks();
+    for (const u of me.units(UnitType.TransportShip)) {
+      const b = recBoats.get(u.id());
+      if (b) {
+        b.last = u.tile();
+        b.seen = t;
+        b.back ||= !!u.retreating?.();
+        continue;
+      }
+      const to = u.targetTile();
+      if (to === undefined) continue;
+      const o: any = g.owner(to);
+      recBoats.set(u.id(), {
+        at: t, seen: t, last: u.tile(), to, back: false,
+        len: g.manhattanDist(u.tile(), to),
+        troops: Math.round(u.troops()),
+        tgt: o.isPlayer() ? o.type()[0] : "TN",
+      });
+    }
+    for (const [id, b] of recBoats) {
+      if (b.seen === t) continue;
+      recBoats.delete(id);
+      let how = b.back ? "retreat" : g.manhattanDist(b.last, b.to) <= 2 ? "land" : "lost";
+      // Lost next to a warship that can shoot us: count it as sunk (as in the sim's boat log).
+      const wr = g.config().warshipTargettingRange() + 3;
+      if (how === "lost" && g.units(UnitType.Warship).some((w: any) => w.owner() !== me &&
+        !w.owner().isFriendly(me) && g.euclideanDistSquared(w.tile(), b.last) <= wr * wr)) how = "sunk";
+      post({ t: "rec", boat: [b.at, b.seen - b.at, b.len, b.troops, b.tgt, how] });
+    }
+  }
+
+  /**
+   * Alliance events, looked at once a second: "we asked", "they asked",
+   * "they refused" / "we refused" (an ask dropped with no alliance: said no or
+   * timed out), "allied", and for an alliance that ended "we betrayed", "they
+   * betrayed", "they died", "expired" or "ended".
+   */
+  function recAllyStep(g: Game, me: any) {
+    const ev = (name: string, p: any, more?: any) =>
+      post({ t: "rec", ally: { tick: g.ticks(), ev: name, who: recWho(p), ...more } });
+    const live = new Map<string, any>();
+    for (const a of me.alliances()) {
+      const o = a.other(me);
+      const k = `${o.id()}@${a.createdAt()}`;
+      live.set(k, o);
+      const x = recAllies.get(k);
+      if (x) {
+        x.o = o;
+        x.until = a.expiresAt();
+        x.theirs = o.betrayals();
+        continue;
+      }
+      recAllies.set(k, { o, until: a.expiresAt(), theirs: o.betrayals() });
+      ev("allied", o, {
+        by: a.requestor() === me ? "us" : "them",
+        border: me.sharesBorderWith(o) ? 1 : 0,
+        ratio: +(o.troops() / Math.max(1, me.troops())).toFixed(2), // their troops / ours
+      });
+    }
+    const mine = me.betrayals();
+    for (const [k, x] of recAllies) {
+      if (live.has(k)) continue;
+      recAllies.delete(k);
+      ev(mine > recMyBetrayals ? "we betrayed" : x.o.betrayals() > x.theirs ? "they betrayed"
+        : !x.o.isAlive() ? "they died" : g.ticks() >= x.until ? "expired" : "ended", x.o);
+    }
+    recMyBetrayals = mine;
+    const asks = new Map<string, any>();
+    for (const r of me.outgoingAllianceRequests()) asks.set(`we asked:${r.recipient().id()}`, r.recipient());
+    for (const r of me.incomingAllianceRequests()) asks.set(`they asked:${r.requestor().id()}`, r.requestor());
+    for (const [k, p] of asks) {
+      if (!recAsks.has(k)) ev(k.slice(0, k.indexOf(":")), p);
+      recAsks.set(k, p);
+    }
+    for (const [k, p] of recAsks) {
+      if (asks.has(k)) continue;
+      recAsks.delete(k);
+      if (![...live.values()].some((o) => o.id() === p.id())) ev(k.startsWith("we") ? "they refused" : "we refused", p);
+    }
+  }
+
+  /** One sample of the last 60 s, with the bombs on their way to our land. */
+  function recSample(g: Game, me: any) {
+    const nukes = g.units(UnitType.AtomBomb, UnitType.HydrogenBomb, UnitType.MIRVWarhead).filter((u: any) => {
+      const to = u.targetTile();
+      return to !== undefined && g.owner(to) === me;
+    }).length;
+    recRecent.push({
+      tick: g.ticks(),
+      tiles: me.numTilesOwned(),
+      troops: Math.round(me.troops()),
+      gold: Number(me.gold()),
+      incoming: recIncoming,
+      sending: Math.round(me.outgoingAttacks().reduce((n: number, a: any) => n + a.troops(), 0)),
+      boats: me.units(UnitType.TransportShip).length,
+      nukes,
+    });
+    if (recRecent.length > 12) recRecent.shift();
+  }
+
+  /** The bot's settings: all of them first, later only what changed. */
+  function recParams(tick: number) {
+    const p: Record<string, any> = (bot as any).params;
+    const set = recSettings ? Object.fromEntries(Object.entries(p).filter(([k, v]) => recSettings![k] !== v)) : p;
+    recSettings = { ...p };
+    if (Object.keys(set).length) post({ t: "rec", settings: { tick, set: { ...set } } });
+  }
+
   function recStep(g: Game) {
     if (!clientID) return;
     const me = g.playerByClientID(clientID);
     if (!me || g.inSpawnPhase()) return;
     const alive = me.isAlive();
     const died = recAlive && !alive;
-    if (alive) recAlive = true;
+    recAlive = alive; // one death checkpoint, not one every tick after it
     const t = g.ticks();
     if (alive && t % 20 === 0) {
       const inc = new Map<string, any>();
@@ -362,6 +480,15 @@ export function createShadow(post: Post, onPage = false) {
         inc.set(p.id(), e);
       }
       recIncoming = [...inc.values()].sort((a, b) => b.troops - a.troops).slice(0, 3);
+    }
+    // A log must never stop the game: the first failure is reported, the rest ignored.
+    try {
+      recBoatStep(g, me);
+      if (alive && t % 10 === 0) recAllyStep(g, me);
+      if (alive && t % 50 === 0) recSample(g, me);
+    } catch (e: any) {
+      if (!recFailed) post({ t: "log", msg: `game log: ${e?.message ?? e}` });
+      recFailed = true;
     }
     if (!died && (!alive || t % 300 !== 0)) return;
     const live = g.players().filter((p: any) => p.isAlive() && p.type() !== "BOT");
@@ -399,6 +526,9 @@ export function createShadow(post: Post, onPage = false) {
         incoming: recIncoming,
         outgoing: [...out.values()].sort((a, b) => b.troops - a.troops).slice(0, 3),
         mirv: (bot as any)?.mirvSaving?.name?.() ?? null, // the bot saving gold for a MIRV on them
+        warshipSkips: (bot as any)?.warshipSkips ?? 0, // boats held back by the warship check, so far
+        sailCut: (bot as any)?.sailCut ?? 0, // boats held back by the trip length limit, so far
+        last60: died ? recRecent : undefined,
       },
     });
   }
@@ -418,6 +548,7 @@ export function createShadow(post: Post, onPage = false) {
         { ...params, ...switchParams() },
       );
       capture(g, () => bot!.init(g));
+      recParams(g.ticks());
       // Never move a player who is already placed outside the spawn phase.
       if (spawnSent || !g.inSpawnPhase()) (bot as any).spawnSent = true;
       log(`bot attached to ${me.name()} (${me.id()})`);
@@ -759,6 +890,7 @@ export function createShadow(post: Post, onPage = false) {
         params = { ...params, ...switchParams() };
         if (bot) Object.assign((bot as any).params, switchParams()); // live switch
         if (fresh) bot = null; // re-create with the new params
+        else if (bot) recParams(runner?.game.ticks() ?? 0);
         break;
     }
   };

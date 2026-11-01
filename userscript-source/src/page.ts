@@ -16,7 +16,7 @@ import { GameUpdateType } from "ofenums";
 import { type FeedEntry, feedEntry, feedTransfers, findHashes } from "./feed";
 import { FARM_TWEAKS } from "./farm-params";
 import { FfaClaims, holdLock, JOIN_WAIT_MS, joinable, LockClaims, SKIP_MS } from "./ffa-claim";
-import { type GameRec, recAll, recBot, recCount, recError, recExport, recFinish, recNew, recSave } from "./rec";
+import { type GameRec, recAll, recBot, recCount, recError, recExport, recFinish, recNew, recSave, recShadow } from "./rec";
 import { type Aid, type AidApi, allAids, setAid } from "./aids";
 
 declare function __ofbotShadowMain(): void;
@@ -603,9 +603,8 @@ function onShadowMessage(c: GameCtx, m: any) {
       break;
     case "rec":
       if (!c.rec) break;
-      c.rec.cps.push(m.cp);
-      if (m.cp.died) c.rec.died = m.cp.tick;
-      if (m.cp.died || c.rec.cps.length % 10 === 1) recSave(c.rec);
+      recShadow(c.rec, m);
+      if (m.cp && (m.cp.died || c.rec.cps.length % 10 === 1)) recSave(c.rec);
       break;
     case "diverged":
       // Ownership differs while no hash has matched for a while (hashes

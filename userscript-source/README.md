@@ -39,7 +39,10 @@ Tampermonkey's **Dashboard → Utilities → Import from file**.
      IDs, our player in the replay, the ticks the bot was on, the moves it
      sent, sync problems and errors, the place, and a checkpoint every 30 s
      (land, troops, gold, buildings, allies, who attacked us and whom we
-     attacked, with their replay IDs).
+     attacked, with their replay IDs). It also holds the bot's settings, each
+     boat's trip and result (landed, sunk, lost or called back), how many boats
+     the warship check held back, alliance events (asked, allied, refused,
+     betrayed, expired), and a sample every 5 s of the 60 s before our death.
    - The panel can be dragged and collapsed. Its settings are saved in
      `localStorage`.
    - **Play aids ▸** unfolds a list of optional helpers for your own play,
