@@ -43,6 +43,27 @@ Tampermonkey's **Dashboard → Utilities → Import from file**.
      boat's trip and result (landed, sunk, lost or called back), how many boats
      the warship check held back, alliance events (asked, allied, refused,
      betrayed, expired), and a sample every 5 s of the 60 s before our death.
+
+     To collect logs: turn the bot on, choose **Public FFA only** in the
+     **Farm** list, and answer any check the site shows yourself; the script
+     doesn't touch those. Press **Export game log** when you're done. The file
+     is a JSON list with one record per game:
+
+     | Field | What it holds |
+     | --- | --- |
+     | `id`, `map`, `players`, `replay`, `me` | The game, its replay link (works once the game is over) and our player in it |
+     | `bot`, `aids`, `aidSent` | When the bot was on, the moves it sent, and the play aids' moves |
+     | `sync` | Desyncs, resyncs and errors |
+     | `settings` | The bot's settings: all at first, then what changed |
+     | `cps` | A checkpoint every 30 s, with `warshipSkips` and `sailCut`; the one with `died` also has `last60` |
+     | `boats` | `[launch tick, ticks at sea, tiles to target, troops, target, result]`; target is H, N or B, or TN for unowned land |
+     | `boatsMore` | Boats past the limit of 400 per game |
+     | `allies` | Alliances made and how they ended |
+     | `asks` | Alliance asks and refusals per player, with the first and last tick |
+     | `died`, `end` | The tick of our death, and the final place |
+
+     Ticks run at 10 per second. A log names the other players in the game,
+     so check that before sharing one.
    - The panel can be dragged and collapsed. Its settings are saved in
      `localStorage`.
    - **Play aids ▸** unfolds a list of optional helpers for your own play,
