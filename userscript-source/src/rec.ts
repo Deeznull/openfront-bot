@@ -11,6 +11,7 @@ const MAX = 120;
 const MAX_BOATS = 400; // per game
 const MAX_ATTACKS = 400; // per game
 const MAX_ALLY_EVENTS = 200;
+const MAX_SPAWNS = 20;
 
 export interface GameRec {
   v: string; // script version
@@ -52,6 +53,12 @@ export interface GameRec {
   attacks: (number | string | null)[][];
   attacksMore: number; // attacks past the cap
   attacksOther: number; // our attacks and boats in a turn that match no row: by hand, an aid, or after 30 s
+  // The bot's spawn moves: [sent tick, turns the shadow had received but not
+  // run yet, ticks until it came back in a turn (null: it didn't), turn /
+  // dropped (stale or replaced on the page) / none (not back within 30 s)];
+  // placed: first tick we owned land; end: tick the spawn phase ended (null:
+  // not seen). Missing in records from before 0.7.2.10.
+  spawn?: { sent: (number | string | null)[][]; placed: number | null; end: number | null };
   allies: { tick: number; ev: string; who: any; [k: string]: any }[]; // alliances made and ended (shadow.ts recAllyStep)
   // Alliance asks by player: the bot asks ~6 times a minute, so counts with first and last tick.
   asks: Record<string, { who: any; first: number; last: number; [ev: string]: any }>;
@@ -89,6 +96,7 @@ export function recNew(init: any, version: string, aids: string[]): GameRec {
     attacks: [],
     attacksMore: 0,
     attacksOther: 0,
+    spawn: { sent: [], placed: null, end: null },
     allies: [],
     asks: {},
     died: null,
@@ -139,6 +147,11 @@ export function recShadow(r: GameRec, m: any, turnTick = -1, realTick = -1) {
     else r.attacksMore++;
   }
   if (m.attackOther) r.attacksOther++;
+  if (m.spawn || m.spawnInfo) {
+    const s = (r.spawn ??= { sent: [], placed: null, end: null });
+    if (m.spawn && s.sent.length < MAX_SPAWNS) s.sent.push(m.spawn);
+    if (m.spawnInfo) Object.assign(s, m.spawnInfo);
+  }
   if (m.ally) {
     const { tick, ev, who } = m.ally;
     if (/asked|refused/.test(ev)) {

@@ -257,6 +257,7 @@ export function createShadow(post: Post, onPage = false) {
       if (i?.clientID !== clientID) continue;
       unflight(i);
       if ((i.type === "attack" || i.type === "boat") && !recMoveEnd(i, "turn", tick)) post({ t: "rec", attackOther: 1 });
+      if (i.type === "spawn") recSpawnEnd("turn", tick);
     }
   }
 
@@ -370,6 +371,17 @@ export function createShadow(post: Post, onPage = false) {
 
   function recMoveRow(x: (typeof recMoves)[number], how: string, tick?: number) {
     post({ t: "rec", attack: [x.tick, x.type === "boat" ? "B" : "A", x.tgt, Math.round(x.troops), tick === undefined ? null : tick - x.tick, how] });
+  }
+
+  // The bot's spawn moves until they come back in a turn (only logs): sent
+  // tick, and how many received turns the shadow had not run yet (its lag).
+  // The page keeps one spawn waiting, so they come back in the order sent.
+  let recSpawns: { tick: number; wall: number; lag: number }[] = [];
+  let recSpawnPhase: boolean | null = null; // last seen; null: not seen yet
+  let recPlaced = false;
+  function recSpawnEnd(how: string, tick?: number) {
+    const x = recSpawns.shift();
+    if (x) post({ t: "rec", spawn: [x.tick, x.lag, tick === undefined ? null : tick - x.tick, how] });
   }
 
   /** Our intent came back or was dropped: closes its row. False if it has none. */
@@ -493,6 +505,20 @@ export function createShadow(post: Post, onPage = false) {
   function recStep(g: Game) {
     if (!clientID) return;
     const me = g.playerByClientID(clientID);
+    try {
+      const wall = performance.now();
+      while (recSpawns.length && wall - recSpawns[0].wall >= REC_MOVE_MS) recSpawnEnd("none");
+      const sp = g.inSpawnPhase();
+      if (recSpawnPhase && !sp) post({ t: "rec", spawnInfo: { end: g.ticks() } });
+      recSpawnPhase = sp;
+      if (!recPlaced && me && me.numTilesOwned() > 0) {
+        recPlaced = true;
+        post({ t: "rec", spawnInfo: { placed: g.ticks() } });
+      }
+    } catch (e: any) {
+      if (!recFailed) post({ t: "log", msg: `game log: ${e?.message ?? e}` });
+      recFailed = true;
+    }
     if (!me || g.inSpawnPhase()) return;
     const alive = me.isAlive();
     const died = recAlive && !alive;
@@ -602,6 +628,7 @@ export function createShadow(post: Post, onPage = false) {
           inflight.push({ troops: i.troops, at: wall });
           recMoveSent(g, i, wall);
         }
+        if (i.type === "spawn") recSpawns.push({ tick: g.ticks(), wall, lag: turns.length - fed });
         if (i.type === "build_unit" && i.unit === UnitType.DefensePost) posts.push({ tile: i.tile, at: wall });
       }
     }
@@ -880,6 +907,9 @@ export function createShadow(post: Post, onPage = false) {
         turns.length = 0;
         inflight = [];
         recMoves = [];
+        recSpawns = [];
+        recSpawnPhase = null;
+        recPlaced = false;
         posts = [];
         recalled.clear();
         spawnSent = false;
@@ -907,6 +937,7 @@ export function createShadow(post: Post, onPage = false) {
         for (const i of m.intents ?? []) {
           unflight(i);
           recMoveEnd(i, "dropped");
+          if (i?.type === "spawn") recSpawnEnd("dropped");
         }
         break;
       case "resync":

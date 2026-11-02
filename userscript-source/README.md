@@ -61,6 +61,7 @@ Tampermonkey's **Dashboard → Utilities → Import from file**.
      | `boatsMore` | Boats past the limit of 400 per game |
      | `attacks` | The bot's attacks and boats: `[sent tick, A or B, target, troops, ticks until back in a turn, result]`; result is `turn`, `dropped` (stale on the page) or `none` (not back within 30 s: never sent, lost or refused on the way, or just late when the game is far behind, which then counts in `attacksOther`) |
      | `attacksMore`, `attacksOther` | Attacks past the limit of 400 per game, and our attacks and boats in a turn that match no row (by hand, an aid, or after 30 s) |
+     | `spawn` | The bot's spawn moves: `sent` rows `[sent tick, turns received but not yet run by the bot, ticks until back in a turn, result]` (result as for `attacks`; `dropped` also covers a spawn replaced by a newer one), `placed` the first tick we owned land, `end` the tick the spawn phase ended. A spawn back after `end`, or `placed` null, explains a game the bot never played. Since 0.7.2.10 |
      | `allies` | Alliances made and how they ended |
      | `asks` | Alliance asks and refusals per player, with the first and last tick |
      | `died`, `end` | The tick of our death, and the final place |

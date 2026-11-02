@@ -714,7 +714,13 @@ function enqueue(c: GameCtx, i: Intent) {
   const key = JSON.stringify(i);
   if (c.queue.some((q) => q.key === key)) return;
   // A spawn replaces any spawn still waiting.
-  if (i.type === "spawn") c.queue = c.queue.filter((q) => q.i.type !== "spawn");
+  if (i.type === "spawn") {
+    const old = c.queue.filter((q) => q.i.type === "spawn").map((q) => q.i);
+    if (old.length) {
+      c.queue = c.queue.filter((q) => q.i.type !== "spawn");
+      c.shadow?.post({ t: "dropped", intents: old });
+    }
+  }
   c.queue.push({ i, at: performance.now(), key });
 }
 
@@ -803,7 +809,7 @@ function pump() {
       break;
     }
   }
-  const moves = gone.filter((i) => i.type === "attack" || i.type === "boat");
+  const moves = gone.filter((i) => i.type === "attack" || i.type === "boat" || i.type === "spawn");
   if (moves.length && c.shadow) c.shadow.post({ t: "dropped", intents: moves });
 }
 
