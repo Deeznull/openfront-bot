@@ -59,7 +59,7 @@ Tampermonkey's **Dashboard → Utilities → Import from file**.
      | `cps[].ms`, `lagTurn`, `lagReal` | Time since the start, and how many ticks the checkpoint trails the last turn received and the real game's last hash tick when it reaches the page |
      | `boats` | `[launch tick, ticks at sea, tiles to target, troops, target, result]`; target is H, N or B, or TN for unowned land |
      | `boatsMore` | Boats past the limit of 400 per game |
-     | `attacks` | The bot's attacks and boats: `[sent tick, A or B, target, troops, ticks until back in a turn, result]`; result is `turn`, `dropped` (stale on the page) or `none` (not back within 30 s: never sent, or lost or refused on the way) |
+     | `attacks` | The bot's attacks and boats: `[sent tick, A or B, target, troops, ticks until back in a turn, result]`; result is `turn`, `dropped` (stale on the page) or `none` (not back within 30 s: never sent, lost or refused on the way, or just late when the game is far behind, which then counts in `attacksOther`) |
      | `attacksMore`, `attacksOther` | Attacks past the limit of 400 per game, and our attacks and boats in a turn that match no row (by hand, an aid, or after 30 s) |
      | `allies` | Alliances made and how they ended |
      | `asks` | Alliance asks and refusals per player, with the first and last tick |
