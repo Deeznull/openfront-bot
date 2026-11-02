@@ -252,10 +252,11 @@ export function createShadow(post: Post, onPage = false) {
   let posts: { tile: number; at: number }[] = [];
   // Attack ids ("boat<unit id>" for boats) already called back by the farm hold.
   const recalled = new Set<string>();
-  function landed(turn: any) {
-    if (inflight.length === 0) return;
+  function landed(turn: any, tick: number) {
     for (const i of turn?.intents ?? []) {
-      if (i?.clientID === clientID) unflight(i);
+      if (i?.clientID !== clientID) continue;
+      unflight(i);
+      if ((i.type === "attack" || i.type === "boat") && !recMoveEnd(i, "turn", tick)) post({ t: "rec", attackOther: 1 });
     }
   }
 
@@ -269,7 +270,7 @@ export function createShadow(post: Post, onPage = false) {
         // Mirror mode: no further ahead than the real game (its tick-N
         // update is what corrects our tick N).
         if (mirror.holds(r.game.ticks() + 1, turns.length - fed)) break;
-        landed(turns[fed]);
+        landed(turns[fed], r.game.ticks());
         r.addTurn(turns[fed++]);
         r.executeNextTick();
         if (!CAN_SNAPSHOT) mirror.sync(r.game);
@@ -352,6 +353,32 @@ export function createShadow(post: Post, onPage = false) {
   const recBoats = new Map<number, any>(); // our boats at sea, by unit ID (IDs survive a resync)
   const recAsks = new Map<string, any>(); // open alliance requests
   const recAllies = new Map<string, any>(); // our alliances
+  // The bot's attacks and boats until they come back in a turn. Apart from
+  // inflight, which expires sooner and steers the bot: this one only logs.
+  const REC_MOVE_MS = 30_000;
+  let recMoves: { tick: number; wall: number; type: string; tgt: string; troops: number }[] = [];
+
+  function recMoveSent(g: Game, i: any, wall: number) {
+    try {
+      const o: any = i.type === "boat" ? g.owner(i.dst) : i.targetID ? g.players().find((p: any) => p.id() === i.targetID) : null;
+      recMoves.push({ tick: g.ticks(), wall, type: i.type, tgt: o?.isPlayer?.() ? o.type()[0] : "TN", troops: i.troops });
+    } catch (e: any) {
+      if (!recFailed) post({ t: "log", msg: `game log: ${e?.message ?? e}` });
+      recFailed = true;
+    }
+  }
+
+  function recMoveRow(x: (typeof recMoves)[number], how: string, tick?: number) {
+    post({ t: "rec", attack: [x.tick, x.type === "boat" ? "B" : "A", x.tgt, Math.round(x.troops), tick === undefined ? null : tick - x.tick, how] });
+  }
+
+  /** Our intent came back or was dropped: closes its row. False if it has none. */
+  function recMoveEnd(i: any, how: string, tick?: number) {
+    const k = recMoves.findIndex((x) => x.type === i.type && x.troops === i.troops);
+    if (k < 0) return false;
+    recMoveRow(recMoves.splice(k, 1)[0], how, tick);
+    return true;
+  }
 
   /** Each boat when it ends: how long it sailed and whether it landed. */
   function recBoatStep(g: Game, me: any) {
@@ -483,6 +510,8 @@ export function createShadow(post: Post, onPage = false) {
     }
     // A log must never stop the game: the first failure is reported, the rest ignored.
     try {
+      const wall = performance.now();
+      while (recMoves.length && wall - recMoves[0].wall >= REC_MOVE_MS) recMoveRow(recMoves.shift()!, "none");
       recBoatStep(g, me);
       if (alive && t % 10 === 0) recAllyStep(g, me);
       if (alive && t % 50 === 0) recSample(g, me);
@@ -569,8 +598,10 @@ export function createShadow(post: Post, onPage = false) {
       const i = translate(g, me, c);
       if (i && !aimedAtTribe(g, me, i)) {
         intents.push(i);
-        if ((i.type === "attack" || i.type === "boat") && typeof i.troops === "number" && i.troops > 0)
+        if ((i.type === "attack" || i.type === "boat") && typeof i.troops === "number" && i.troops > 0) {
           inflight.push({ troops: i.troops, at: wall });
+          recMoveSent(g, i, wall);
+        }
         if (i.type === "build_unit" && i.unit === UnitType.DefensePost) posts.push({ tile: i.tile, at: wall });
       }
     }
@@ -848,6 +879,7 @@ export function createShadow(post: Post, onPage = false) {
         mapSource = m.mapSource ?? { files: m.map };
         turns.length = 0;
         inflight = [];
+        recMoves = [];
         posts = [];
         recalled.clear();
         spawnSent = false;
@@ -872,7 +904,10 @@ export function createShadow(post: Post, onPage = false) {
         drain();
         break;
       case "dropped":
-        for (const i of m.intents ?? []) unflight(i);
+        for (const i of m.intents ?? []) {
+          unflight(i);
+          recMoveEnd(i, "dropped");
+        }
         break;
       case "resync":
         start(m.snapshot, false).catch((e) => post({ t: "error", msg: `resync failed: ${e?.message ?? e}` }));

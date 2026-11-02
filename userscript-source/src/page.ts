@@ -91,6 +91,7 @@ interface GameCtx {
   shadowHashes: Map<number, number>;
   syncedTick: number;
   realTick: number; // last hash tick of the real game
+  turnTick: number; // last turn the page received for the real game
   shadowTick: number; // last tick the shadow (and so the bot) has played
   shadowSeenAt: number; // wall time the shadow last advanced
   resyncing: boolean;
@@ -368,6 +369,7 @@ function onInit(w: Worker, realPost: GameCtx["realPost"], init: any) {
     shadowHashes: new Map(),
     syncedTick: -1,
     realTick: -1,
+    turnTick: -1,
     shadowTick: -1,
     shadowSeenAt: 0,
     resyncing: false,
@@ -469,7 +471,9 @@ function mapSourceFor(init: any): any {
 
 function onTurn(turn: any) {
   const c = ctx;
-  if (!c || !c.allowed || !c.shadow) return;
+  if (!c || !c.allowed) return;
+  if (turn?.turnNumber > c.turnTick) c.turnTick = turn.turnNumber;
+  if (!c.shadow) return;
   if (!c.shadowReady) c.turns.push(turn); // kept only for a restart before ready
   c.shadow.post({ t: "turn", turn });
 }
@@ -603,7 +607,7 @@ function onShadowMessage(c: GameCtx, m: any) {
       break;
     case "rec":
       if (!c.rec) break;
-      recShadow(c.rec, m);
+      recShadow(c.rec, m, c.turnTick, c.realTick);
       if (m.cp && (m.cp.died || c.rec.cps.length % 10 === 1)) recSave(c.rec);
       break;
     case "diverged":

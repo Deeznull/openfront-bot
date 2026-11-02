@@ -154,7 +154,7 @@ async function main() {
     if (m.t === "done") acks++;
     else if (m.t === "ready") ready++;
     else if (m.t === "hash") shadowHashes.set(m.tick, m.hash);
-    else if (m.t === "rec") recShadow(rec, m);
+    else if (m.t === "rec") recShadow(rec, m, curTick, curTick);
     else if (m.t === "intents") {
       const due = curTick + LATENCY;
       const list = pending.get(due) ?? [];
@@ -409,12 +409,15 @@ async function main() {
   console.log(
     `GAME LOG checkpoints ${rec.cps.length}, settings ${rec.settings.length} (${Object.keys(rec.settings[0]?.set ?? {}).length} keys), ` +
       `boats ${JSON.stringify(tally(rec.boats, (b) => String(b[5])))}, skips ${rec.cps.at(-1)?.warshipSkips}, ` +
+      `attacks ${JSON.stringify(tally(rec.attacks, (a) => String(a[5])))} other ${rec.attacksOther}, max wait ${Math.max(0, ...rec.attacks.map((a) => Number(a[4] ?? 0)))}, max lag ${Math.max(0, ...rec.cps.map((c) => c.lagTurn ?? 0))}, ` +
       `allies ${JSON.stringify(tally(rec.allies, (a) => a.ev))}, asked ${Object.keys(rec.asks).length} players, last60 ${deathCp?.last60?.length ?? "no death"}, ` +
       `json ${Math.round(JSON.stringify(rec).length / 1024)} KB`,
   );
   if (process.argv.includes("--recout")) writeFileSync(arg("recout", "rec.json"), JSON.stringify(rec, null, 1));
   const recOk = rec.cps.length > 0 && (process.argv.includes("--nobot") || rec.settings.length > 0) &&
-    rec.cps.filter((c) => c.died).length === (me.isAlive() ? 0 : 1) && (!deathCp || deathCp.last60?.length > 0);
+    rec.cps.filter((c) => c.died).length === (me.isAlive() ? 0 : 1) && (!deathCp || deathCp.last60?.length > 0) &&
+    rec.cps.every((c) => c.ms >= 0 && c.lagTurn !== null && c.lagReal !== null) &&
+    (process.argv.includes("--nobot") || rec.attacks.some((a) => a[5] === "turn"));
   if (!recOk) console.log("GAME LOG FAIL");
   const ok = synced && me.numTilesOwned() > 0 && errors === 0 && realErrors === 0 && tribeDiplomacy === 0 &&
     !counts.breakAlliance && !me.isTraitor() && !earlyWin && recOk;

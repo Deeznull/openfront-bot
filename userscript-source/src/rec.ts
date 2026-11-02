@@ -9,6 +9,7 @@
 const KEY = "ofbot.games.v1";
 const MAX = 120;
 const MAX_BOATS = 400; // per game
+const MAX_ATTACKS = 400; // per game
 const MAX_ALLY_EVENTS = 200;
 
 export interface GameRec {
@@ -31,12 +32,21 @@ export interface GameRec {
   aids: string[]; // play aids on at the start
   aidSent: Record<string, number>; // moves the play aids sent (macros, auto-donate), by type
   sync: { desyncs: number; resyncs: number; mirror: boolean; lost: boolean; errors: string[] };
-  cps: any[]; // checkpoints from the shadow (shadow.ts recStep); the death one has last60
+  // Checkpoints from the shadow (shadow.ts recStep); the death one has last60.
+  // The page adds, as each reaches it: ms since the start, and how far it trails
+  // the last turn received (lagTurn) and the real game's last hash tick (lagReal).
+  cps: any[];
   settings: { tick: number; set: Record<string, any> }[]; // the bot's settings: all at first, then what changed
   // Our boats as they end: [launch tick, ticks at sea, tiles to target, troops,
   // target (H/N/B or TN for unowned land), land / sunk / lost / retreat]
   boats: (number | string)[][];
   boatsMore: number; // boats past the cap
+  // The bot's attacks and boats: [sent tick, A or B, target (H/N/B or TN for
+  // unowned land), troops, ticks until the intent came back in a turn (null: it
+  // didn't), turn / dropped (stale on the page) / none (not back within 30 s)]
+  attacks: (number | string | null)[][];
+  attacksMore: number; // attacks past the cap
+  attacksOther: number; // our attacks and boats in a turn that match no row: by hand, an aid, or after 30 s
   allies: { tick: number; ev: string; who: any; [k: string]: any }[]; // alliances made and ended (shadow.ts recAllyStep)
   // Alliance asks by player: the bot asks ~6 times a minute, so counts with first and last tick.
   asks: Record<string, { who: any; first: number; last: number; [ev: string]: any }>;
@@ -71,6 +81,9 @@ export function recNew(init: any, version: string, aids: string[]): GameRec {
     settings: [],
     boats: [],
     boatsMore: 0,
+    attacks: [],
+    attacksMore: 0,
+    attacksOther: 0,
     allies: [],
     asks: {},
     died: null,
@@ -98,9 +111,16 @@ export function recBot(r: GameRec, on: boolean, tick: number) {
   r.botOn ||= on;
 }
 
-/** A "rec" message from the shadow: a checkpoint, settings, a boat or an alliance event. */
-export function recShadow(r: GameRec, m: any) {
+/**
+ * A "rec" message from the shadow: a checkpoint, settings, a boat, an attack or
+ * an alliance event. `turnTick` and `realTick` are how far the game has got as
+ * the page sees it (below 0: not known yet).
+ */
+export function recShadow(r: GameRec, m: any, turnTick = -1, realTick = -1) {
   if (m.cp) {
+    m.cp.ms = Date.now() - r.start;
+    m.cp.lagTurn = turnTick < 0 ? null : turnTick - m.cp.tick;
+    m.cp.lagReal = realTick < 0 ? null : realTick - m.cp.tick;
     r.cps.push(m.cp);
     if (m.cp.died) r.died = m.cp.tick;
   }
@@ -109,6 +129,11 @@ export function recShadow(r: GameRec, m: any) {
     if (r.boats.length < MAX_BOATS) r.boats.push(m.boat);
     else r.boatsMore++;
   }
+  if (m.attack) {
+    if (r.attacks.length < MAX_ATTACKS) r.attacks.push(m.attack);
+    else r.attacksMore++;
+  }
+  if (m.attackOther) r.attacksOther++;
   if (m.ally) {
     const { tick, ev, who } = m.ally;
     if (/asked|refused/.test(ev)) {
