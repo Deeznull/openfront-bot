@@ -64,6 +64,7 @@ const OUT = path.resolve("..", "bot_runs", `eval_${TAG}.jsonl`);
 // Snapshots are a regenerable cache (~2 MB each, gzipped): kept outside the project folder.
 const SNAPS = arg("snapDir", path.join(os.homedir(), "openfront_snaps"));
 const CACHE = path.resolve("..", "bot_runs", "games_cache.jsonl");
+fs.mkdirSync(path.dirname(OUT), { recursive: true });
 
 // Hash of the code that decides a game's outcome for the bot/stand-ins.
 const CODE_FILES = [
