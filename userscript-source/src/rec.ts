@@ -28,6 +28,11 @@ export interface GameRec {
     on: [number, number | null][]; // tick ranges the bot was on (null: to the end)
     sent: Record<string, number>; // moves sent, by type
     dropped: number; // moves that went stale or failed
+    // Why they were dropped. A total alone cannot distinguish the harness from
+    // the bot: background-tab timer throttling produced a 73% drop rate and was
+    // invisible because the record only carried the sum. Kept out of the type
+    // as optional so records from older builds still parse.
+    dropWhy?: { stale: number; noHandler: number; failed: number };
   };
   aids: string[]; // play aids on at the start
   aidSent: Record<string, number>; // moves the play aids sent (macros, auto-donate), by type
@@ -73,7 +78,7 @@ export function recNew(init: any, version: string, aids: string[]): GameRec {
     replay: `https://api.openfront.io/public/game/${info.gameID ?? "?"}`,
     me: { clientID, playerID: null, name: String(mine?.username ?? "?") },
     botOn: false,
-    bot: { on: [], sent: {}, dropped: 0 },
+    bot: { on: [], sent: {}, dropped: 0, dropWhy: { stale: 0, noHandler: 0, failed: 0 } },
     aids,
     aidSent: {},
     sync: { desyncs: 0, resyncs: 0, mirror: false, lost: false, errors: [] },

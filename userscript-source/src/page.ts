@@ -755,7 +755,10 @@ function pump() {
   const gone: Intent[] = [];
   c.queue = c.queue.filter((q) => now - q.at < 2500 || (gone.push(q.i), false));
   c.dropped += gone.length;
-  if (c.rec) c.rec.bot.dropped += gone.length;
+  if (c.rec) {
+    c.rec.bot.dropped += gone.length;
+    (c.rec.bot.dropWhy ??= { stale: 0, noHandler: 0, failed: 0 }).stale += gone.length;
+  }
   while (c.queue.length && canSend(c)) {
     if (!c.handlers || !c.bus) {
       c.bus = findBus();
@@ -773,7 +776,10 @@ function pump() {
     const handler = route && c.handlers[route[0]];
     if (!handler) {
       c.dropped++;
-      if (c.rec) c.rec.bot.dropped++;
+      if (c.rec) {
+        c.rec.bot.dropped++;
+        (c.rec.bot.dropWhy ??= { stale: 0, noHandler: 0, failed: 0 }).noHandler++;
+      }
       gone.push(i);
       continue;
     }
@@ -788,7 +794,10 @@ function pump() {
     } catch (e) {
       console.warn("[ofbot] send failed", i, e);
       c.dropped++;
-      if (c.rec) c.rec.bot.dropped++;
+      if (c.rec) {
+        c.rec.bot.dropped++;
+        (c.rec.bot.dropWhy ??= { stale: 0, noHandler: 0, failed: 0 }).failed++;
+      }
       gone.push(i);
       c.bus = c.handlers = null; // rediscover (new game / new bus)
       break;
