@@ -186,6 +186,8 @@ export function createShadow(post: Post, onPage = false) {
   let paramsKey = "{}"; // JSON of the last enable's params (page profile)
   let bot: BotExecution | null = null;
   let spawnSent = false;
+  let spawnAt = -Infinity; // wall time of the last spawn try
+  const SPAWN_RETRY_MS = 3000; // past the page's 2.5 s stale limit
 
   function log(msg: string) {
     post({ t: "log", msg });
@@ -257,7 +259,11 @@ export function createShadow(post: Post, onPage = false) {
       if (i?.clientID !== clientID) continue;
       unflight(i);
       if ((i.type === "attack" || i.type === "boat") && !recMoveEnd(i, "turn", tick)) post({ t: "rec", attackOther: 1 });
-      if (i.type === "spawn") recSpawnEnd("turn", tick);
+      if (i.type === "spawn") {
+        // Retries are 3 s apart, so what came back is the newest; older tries were lost.
+        while (recSpawns.length > 1) recSpawnEnd("none");
+        recSpawnEnd("turn", tick);
+      }
     }
   }
 
@@ -375,7 +381,7 @@ export function createShadow(post: Post, onPage = false) {
 
   // The bot's spawn moves until they come back in a turn (only logs): sent
   // tick, and how many received turns the shadow had not run yet (its lag).
-  // The page keeps one spawn waiting, so they come back in the order sent.
+  // The page keeps one spawn waiting and drops the older one first.
   let recSpawns: { tick: number; wall: number; lag: number }[] = [];
   let recSpawnPhase: boolean | null = null; // last seen; null: not seen yet
   let recPlaced = false;
@@ -618,6 +624,15 @@ export function createShadow(post: Post, onPage = false) {
       posts = posts.filter((x) => wall - x.at < INFLIGHT_MS && !built.some((t: number) => g.manhattanDist(t, x.tile) <= 4));
     }
     (bot as any).pendingPosts = posts.map((x) => x.tile);
+    // The bot chooses its spawn once, but that one move can be lost: the page
+    // drops it as stale while the HUD isn't up, or the game places nobody on
+    // it. Online (0.7.2.9) 64 of 238 games ended without land after that. While
+    // the spawn phase lasts and we hold no land, choose and send again.
+    if (g.inSpawnPhase() && (bot as any).spawnSent && !me.hasSpawned() && wall - spawnAt >= SPAWN_RETRY_MS) {
+      (bot as any).spawnSent = false;
+      spawnSent = false;
+      spawnAt = wall;
+    }
     const out = capture(g, () => bot!.tick(now));
     const intents: Intent[] = [];
     for (const c of out) {
@@ -628,7 +643,10 @@ export function createShadow(post: Post, onPage = false) {
           inflight.push({ troops: i.troops, at: wall });
           recMoveSent(g, i, wall);
         }
-        if (i.type === "spawn") recSpawns.push({ tick: g.ticks(), wall, lag: turns.length - fed });
+        if (i.type === "spawn") {
+          spawnAt = wall;
+          recSpawns.push({ tick: g.ticks(), wall, lag: turns.length - fed });
+        }
         if (i.type === "build_unit" && i.unit === UnitType.DefensePost) posts.push({ tile: i.tile, at: wall });
       }
     }
@@ -913,6 +931,7 @@ export function createShadow(post: Post, onPage = false) {
         posts = [];
         recalled.clear();
         spawnSent = false;
+        spawnAt = -Infinity;
         mirror = new Mirror(post, mySmallID);
         start(m.snapshot, true).catch((e) => post({ t: "error", msg: `shadow init failed: ${e?.message ?? e}` }));
         break;

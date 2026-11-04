@@ -150,6 +150,8 @@ async function main() {
     process.exit(1);
   });
   const rec = recNew({ gameStartInfo: gameStart, clientID: CLIENT }, "test", []); // the game log, as the page keeps it
+  const loseSpawns = Number(arg("dropspawn", arg("losespawn", "0")));
+  let spawnsLost = 0;
   thread.on("message", (m: any) => {
     if (m.t === "done") acks++;
     else if (m.t === "ready") ready++;
@@ -159,6 +161,13 @@ async function main() {
       const due = curTick + LATENCY;
       const list = pending.get(due) ?? [];
       for (const i of m.intents) {
+        // --dropspawn N / --losespawn N: the first N spawn moves never reach a
+        // turn, either dropped by the page (it tells the shadow) or lost silently.
+        if (i.type === "spawn" && spawnsLost < loseSpawns) {
+          spawnsLost++;
+          if (process.argv.includes("--dropspawn")) shadow({ t: "dropped", intents: [i] });
+          continue;
+        }
         counts[i.type] = (counts[i.type] ?? 0) + 1;
         const field = TRIBE_FIELD[i.type];
         if (field !== undefined) {
@@ -419,7 +428,8 @@ async function main() {
     rec.cps.filter((c) => c.died).length === (me.isAlive() ? 0 : 1) && (!deathCp || deathCp.last60?.length > 0) &&
     rec.cps.every((c) => c.ms >= 0 && c.lagTurn !== null && c.lagReal !== null) &&
     (process.argv.includes("--nobot") || rec.attacks.some((a) => a[5] === "turn")) &&
-    (process.argv.includes("--nobot") || (rec.spawn?.sent[0]?.[3] === "turn" && rec.spawn.placed !== null && rec.spawn.end !== null));
+    (process.argv.includes("--nobot") || (rec.spawn?.sent.some((s) => s[3] === "turn") && rec.spawn.placed !== null && rec.spawn.end !== null));
+  if (loseSpawns > 0) console.log(`spawn moves lost ${spawnsLost}, log ${JSON.stringify(rec.spawn)}`);
   if (!recOk) console.log("GAME LOG FAIL");
   const ok = synced && me.numTilesOwned() > 0 && errors === 0 && realErrors === 0 && tribeDiplomacy === 0 &&
     !counts.breakAlliance && !me.isTraitor() && !earlyWin && recOk;
